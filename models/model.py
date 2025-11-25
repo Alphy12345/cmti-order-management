@@ -20,13 +20,11 @@ class Proposal(Base):
     quote_description = Column(String, nullable=True)
     quote_date = Column(String, nullable=True)
     quote_amount = Column(String, nullable=True)
+
     revised_negotiated = Column("revised/negotiated", String, nullable=True)
-    revised_negotiated_quote_date = Column(
-        "revised/negotiated_quote_date", String, nullable=True
-    )
-    revised_negotiated_quote_amount = Column(
-        "revised/negotiated_quote_amount", String, nullable=True
-    )
+    revised_negotiated_quote_date = Column("revised/negotiated_quote_date", String, nullable=True)
+    revised_negotiated_quote_amount = Column("revised/negotiated_quote_amount", String, nullable=True)
+
     quotation_given_by_name = Column(String, nullable=True)
     quotation_given_by_department = Column(String, nullable=True)
     project_number = Column(String, nullable=True)
@@ -49,14 +47,27 @@ class Proposal(Base):
     dispatch_date = Column(String, nullable=True)
     ppm_remarks = Column(String, nullable=True)
     updated_by = Column(String, nullable=True)
-    created_at = Column(
-        DateTime(timezone=False), server_default=func.now(), nullable=False
+
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    # Relationships with cascading delete
+    documents = relationship(
+        "Document",
+        back_populates="proposal",
+        cascade="all, delete-orphan"
     )
-    updated_at = Column(
-        DateTime(timezone=False),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
+
+    payments = relationship(
+        "Payment",
+        back_populates="proposal",
+        cascade="all, delete-orphan"
+    )
+
+    progress_entries = relationship(
+        "Progress",
+        back_populates="proposal",
+        cascade="all, delete-orphan"
     )
 
 
@@ -65,9 +76,7 @@ class Stage(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=True)
-    created_at = Column(
-        DateTime(timezone=False), server_default=func.now(), nullable=False
-    )
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
 
 
 class Document(Base):
@@ -77,18 +86,17 @@ class Document(Base):
     name = Column(String, nullable=True)
     description = Column(String, nullable=True)
     url = Column(String, nullable=True)
-    project_id = Column(Integer, ForeignKey("proposals.id"), nullable=True)
-    stage_id = Column(Integer, ForeignKey("stages.id"), nullable=True)
+
+    project_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"))
+    stage_id = Column(Integer, ForeignKey("stages.id", ondelete="SET NULL"))
+
     uploaded_by = Column(String, nullable=True)
-    created_at = Column(
-        DateTime(timezone=False), server_default=func.now(), nullable=False
-    )
-    updated_at = Column(
-        DateTime(timezone=False),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
+
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    proposal = relationship("Proposal", back_populates="documents")
+    stage = relationship("Stage")
 
 
 class Payment(Base):
@@ -107,17 +115,15 @@ class Payment(Base):
     ld = Column(String, nullable=True)
     bal = Column(String, nullable=True)
     follow_up_status = Column(String, nullable=True)
-    project_id = Column(Integer, ForeignKey("proposals.id"), nullable=True)
-    stage_id = Column(Integer, ForeignKey("stages.id"), nullable=True)
-    created_at = Column(
-        DateTime(timezone=False), server_default=func.now(), nullable=False
-    )
-    updated_at = Column(
-        DateTime(timezone=False),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
+
+    project_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"))
+    stage_id = Column(Integer, ForeignKey("stages.id", ondelete="SET NULL"))
+
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    proposal = relationship("Proposal", back_populates="payments")
+    stage = relationship("Stage")
 
 
 class Progress(Base):
@@ -125,13 +131,12 @@ class Progress(Base):
 
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     remarks = Column(String, nullable=True)
-    project_id = Column(Integer, ForeignKey("proposals.id"), nullable=True)
-    stage_id = Column(Integer, ForeignKey("stages.id"), nullable=True)
-    updated_by = Column(String, nullable=True)
-    updated_at = Column(
-        DateTime(timezone=False),
-        server_default=func.now(),
-        onupdate=func.now(),
-        nullable=False,
-    )
 
+    project_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"))
+    stage_id = Column(Integer, ForeignKey("stages.id", ondelete="SET NULL"))
+
+    updated_by = Column(String, nullable=True)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    proposal = relationship("Proposal", back_populates="progress_entries")
+    stage = relationship("Stage")
