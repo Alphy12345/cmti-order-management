@@ -143,6 +143,7 @@ function Proposals() {
   const [centerFilter, setCenterFilter] = useState(null)
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
+  const [statusFilter, setStatusFilter] = useState(null)
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -382,8 +383,37 @@ function Proposals() {
       })
     }
 
+    // Status filter from cards
+    if (statusFilter === 'totalProjects') {
+      filtered = filtered.filter(
+        (item) => item.project_number && item.project_number.trim() !== '',
+      )
+    } else if (statusFilter === 'technicallyCompleted') {
+      filtered = filtered.filter(
+        (item) =>
+          item.technical_completed_year &&
+          item.technical_completed_year.trim() !== '',
+      )
+    } else if (statusFilter === 'financiallyCompleted') {
+      filtered = filtered.filter(
+        (item) =>
+          item.technical_completed_year &&
+          item.technical_completed_year.trim() !== '' &&
+          item.financial_completed_year &&
+          item.financial_completed_year.trim() !== '',
+      )
+    } else if (statusFilter === 'pendingProjects') {
+      filtered = filtered.filter(
+        (item) =>
+          (!item.technical_completed_year ||
+            item.technical_completed_year.trim() === '') &&
+          (!item.financial_completed_year ||
+            item.financial_completed_year.trim() === ''),
+      )
+    }
+
     setFilteredData(filtered)
-  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, tableData])
+  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, tableData])
 
   // Get unique centers for filter
   const uniqueCenters = useMemo(() => {
@@ -527,7 +557,10 @@ function Proposals() {
                       <div className="space-y-6">
                         {/* Statistics Cards */}
                         <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-                          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                          <Card
+                            className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                            onClick={() => setStatusFilter(null)}
+                          >
                             <Statistic
                               title={
                                 <span className="text-white/90">
@@ -542,7 +575,10 @@ function Proposals() {
                               }}
                             />
                           </Card>
-                          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                          <Card
+                            className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                            onClick={() => setStatusFilter('totalProjects')}
+                          >
                             <Statistic
                               title={
                                 <span className="text-white/90">
@@ -557,7 +593,10 @@ function Proposals() {
                               }}
                             />
                           </Card>
-                          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                          <Card
+                            className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                            onClick={() => setStatusFilter('technicallyCompleted')}
+                          >
                             <Statistic
                               title={
                                 <span className="text-white/90">
@@ -572,7 +611,10 @@ function Proposals() {
                               }}
                             />
                           </Card>
-                          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                          <Card
+                            className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                            onClick={() => setStatusFilter('financiallyCompleted')}
+                          >
                             <Statistic
                               title={
                                 <span className="text-white/90">
@@ -587,7 +629,10 @@ function Proposals() {
                               }}
                             />
                           </Card>
-                          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow">
+                          <Card
+                            className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                            onClick={() => setStatusFilter('pendingProjects')}
+                          >
                             <Statistic
                               title={
                                 <span className="text-white/90">
@@ -631,6 +676,7 @@ function Proposals() {
                                   setCenterFilter(null)
                                   setOrderDateRange(null)
                                   setEnquiryDateRange(null)
+                                  setStatusFilter(null)
                                 }}
                                 size="large"
                                 style={{ width: '100%' }}

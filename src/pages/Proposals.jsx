@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DeleteOutlined,
   EditOutlined,
@@ -143,6 +143,11 @@ function Proposals() {
   const [centerFilter, setCenterFilter] = useState(null)
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
+  const [statusFilter, setStatusFilter] = useState(null)
+  const [importPreview, setImportPreview] = useState(null)
+  const [importModalOpen, setImportModalOpen] = useState(false)
+  const fileInputRef = useRef(null)
+  const [bulkImportLoading, setBulkImportLoading] = useState(false)
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -198,7 +203,6 @@ function Proposals() {
       ? `${API_BASE_URL}/proposals/${editingRecord.id}`
       : `${API_BASE_URL}/proposals/`
     const method = isEditing ? 'PUT' : 'POST'
-
     try {
       const response = await fetch(url, {
         method,
@@ -212,7 +216,6 @@ function Proposals() {
         const errorText = await response.text()
         throw new Error(errorText || 'Request failed')
       }
-
       await fetchProposals()
       message.success(isEditing ? 'Proposal updated' : 'Proposal created')
       closeModal()
@@ -232,12 +235,10 @@ function Proposals() {
           method: 'DELETE',
           headers: { accept: '*/*' },
         })
-
         if (!response.ok) {
           const errorText = await response.text()
           throw new Error(errorText || 'Failed to delete proposal')
         }
-
         message.success('Proposal deleted')
         await fetchProposals()
       } catch (error) {
@@ -275,7 +276,6 @@ function Proposals() {
         (!item.financial_completed_year ||
           item.financial_completed_year.trim() === ''),
     ).length
-
     return {
       totalProposals,
       totalProjects,
@@ -339,8 +339,37 @@ function Proposals() {
       })
     }
 
+    // Status filter from cards
+    if (statusFilter === 'totalProjects') {
+      filtered = filtered.filter(
+        (item) => item.project_number && item.project_number.trim() !== '',
+      )
+    } else if (statusFilter === 'technicallyCompleted') {
+      filtered = filtered.filter(
+        (item) =>
+          item.technical_completed_year &&
+          item.technical_completed_year.trim() !== '',
+      )
+    } else if (statusFilter === 'financiallyCompleted') {
+      filtered = filtered.filter(
+        (item) =>
+          item.technical_completed_year &&
+          item.technical_completed_year.trim() !== '' &&
+          item.financial_completed_year &&
+          item.financial_completed_year.trim() !== '',
+      )
+    } else if (statusFilter === 'pendingProjects') {
+      filtered = filtered.filter(
+        (item) =>
+          (!item.technical_completed_year ||
+            item.technical_completed_year.trim() === '') &&
+          (!item.financial_completed_year ||
+            item.financial_completed_year.trim() === ''),
+      )
+    }
+
     setFilteredData(filtered)
-  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, tableData])
+  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, tableData])
 
   // Get unique centers for filter
   const uniqueCenters = useMemo(() => {
@@ -356,7 +385,6 @@ function Proposals() {
       message.warning('No data to export')
       return
     }
-
     const worksheet = XLSX.utils.json_to_sheet(
       filteredData.map((item) => {
         const row = {}
@@ -375,6 +403,175 @@ function Proposals() {
     message.success('Excel file downloaded successfully')
   }
 
+  // Excel serial date starts from 1899-12-30
+  const EXCEL_EPOCH = dayjs('1899-12-30')
+  const isExcelDateSerial = (num) =>
+    typeof num === 'number' && num >= 40000 && num < 1000000
+
+  const excelSerialToDateString = (serial) => {
+    const days = Math.floor(serial) - (serial >= 24107 ? 1 : 0)
+    const date = EXCEL_EPOCH.add(days, 'day')
+    return date.format('YYYY-MM-DD')
+  }
+
+  const normalizeHeaderKey = (value) => {
+    if (!value) return ''
+    return value
+      .toString()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '')
+  }
+
+  const handleBulkImport = async () => {
+    if (!importPreview?.rows?.length) {
+      message.warning('No rows to import')
+      return
+    }
+    setBulkImportLoading(true)
+    try {
+      // Build lookup from normalized header -> internal field name
+      const fieldLookup = PROPOSAL_FIELDS.reduce((acc, field) => {
+        const labelKey = normalizeHeaderKey(field.label)
+        const nameKey = normalizeHeaderKey(field.name)
+        const apiKey = normalizeHeaderKey(getApiName(field.name))
+        const fieldName = field.name
+        if (labelKey) acc[labelKey] = fieldName
+        if (nameKey) acc[nameKey] = fieldName
+        if (apiKey) acc[apiKey] = fieldName
+        return acc
+      }, {})
+
+      const payload = importPreview.rows.map((row) => {
+        const values = {}
+        importPreview.headers.forEach((header, idx) => {
+          const rawValue = row[idx]
+          let cleanValue = rawValue
+
+          const headerKey = normalizeHeaderKey(header)
+          let fieldName = fieldLookup[headerKey]
+
+          // Extra robust mapping for tricky columns
+          if (!fieldName) {
+            const hk = headerKey
+
+            // Email Reference (Email Ref, Email Reference No, Email Ref No etc.)
+            if (
+              hk.includes('email') &&
+              (hk.includes('reference') || hk.includes('ref'))
+            ) {
+              fieldName = 'email_reference'
+            }
+            // Center / Centre
+            else if (hk.includes('center') || hk.includes('centre')) {
+              fieldName = 'center'
+            }
+            // Co-ordinator Remarks / Coordinator Remarks / Co Ordinator Remarks etc.
+            else if (
+              (hk.includes('coord') || hk.includes('coordinator') || hk.includes('coordinator')) &&
+              hk.includes('remark')
+            ) {
+              fieldName = 'co_ordinator_remarks'
+            }
+            // Closer / Closure Report (Closure Report, Closer Rep etc.)
+            else if (
+              (hk.includes('closer') || hk.includes('closure') || hk.includes('closeout')) &&
+              (hk.includes('report') || hk.includes('rep'))
+            ) {
+              fieldName = 'closer_report'
+            }
+          }
+
+          if (!fieldName) return
+
+          // Handle Excel date serial numbers (e.g., 45400 → "2024-06-01")
+          if (typeof rawValue === 'number' && isExcelDateSerial(rawValue)) {
+            cleanValue = excelSerialToDateString(rawValue)
+          }
+          // Force all other numbers to strings
+          else if (typeof rawValue === 'number') {
+            cleanValue = rawValue.toString()
+          }
+          // Handle actual JS Date objects from XLSX
+          else if (rawValue instanceof Date) {
+            cleanValue = dayjs(rawValue).format('YYYY-MM-DD')
+          }
+          // Trim strings
+          else if (typeof rawValue === 'string') {
+            cleanValue = rawValue.trim()
+          }
+          // Empty cells
+          else if (rawValue === null || rawValue === undefined) {
+            cleanValue = ''
+          }
+
+          values[fieldName] = cleanValue
+        })
+
+        // Ensure required field is present
+        if (!values.updated_by) {
+          values.updated_by = 'Excel Import'
+        }
+
+        return mapUiToApi(values)
+      })
+
+      const response = await fetch(`${API_BASE_URL}/proposals/bulk`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const err = await response.text()
+        throw new Error(`Import failed: ${err.substring(0, 200)}...`)
+      }
+
+      const result = await response.json()
+      message.success(`${result.length} proposals imported successfully!`)
+      await fetchProposals()
+      setImportModalOpen(false)
+      setImportPreview(null)
+    } catch (err) {
+      console.error('Bulk import error:', err)
+      message.error(err.message || 'Failed to import data. Check console for details.')
+    } finally {
+      setBulkImportLoading(false)
+    }
+  }
+
+  // Import Excel and build preview
+  const handleImportFileChange = (event) => {
+    const file = event.target?.files?.[0]
+    if (!file) return
+
+    const reader = new FileReader()
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target.result)
+        const workbook = XLSX.read(data, { type: 'array' })
+        const firstSheetName = workbook.SheetNames[0]
+        const worksheet = workbook.Sheets[firstSheetName]
+        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
+        const headers = rows[0] || []
+        const body = rows.slice(1)
+        setImportPreview({ headers, rows: body, sheetName: firstSheetName })
+        setImportModalOpen(true)
+        message.success('File loaded. Preview opened.')
+      } catch (error) {
+        console.error(error)
+        message.error('Unable to read Excel file')
+      } finally {
+        if (event.target) {
+          event.target.value = ''
+        }
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
   const columns = useMemo(() => {
     const baseColumns = TABLE_FIELDS.map((field) => ({
       key: field.name,
@@ -384,7 +581,6 @@ function Proposals() {
       fixed: field.fixed,
       render: field.render,
     }))
-
     return [
       ...baseColumns,
       {
@@ -426,7 +622,7 @@ function Proposals() {
     ]
   }, [deletingId, handleDelete, openEditModal])
 
-  // Compact projects view derived from proposals
+  // Compact projects view derived from proposals (currently unused, but kept)
   const projectRows = useMemo(
     () =>
       tableData
@@ -492,212 +688,309 @@ function Proposals() {
   return (
     <>
       <div className="rounded-3xl bg-white p-6 shadow-sm">
-          <Tabs
-                defaultActiveKey="proposals"
-                items={[
-                  {
-                    key: 'proposals',
-                    label: 'Proposals',
-                    children: (
-                      <div className="space-y-6">
-                        {/* Statistics Cards */}
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
-                          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow">
-                            <Statistic
-                              title={
-                                <span className="text-white/90">
-                                  Total Proposals
-                                </span>
-                              }
-                              value={statistics.totalProposals}
-                              valueStyle={{
-                                color: '#fff',
-                                fontSize: '28px',
-                                fontWeight: 'bold',
-                              }}
-                            />
-                          </Card>
-                          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow">
-                            <Statistic
-                              title={
-                                <span className="text-white/90">
-                                  Total Projects
-                                </span>
-                              }
-                              value={statistics.totalProjects}
-                              valueStyle={{
-                                color: '#fff',
-                                fontSize: '28px',
-                                fontWeight: 'bold',
-                              }}
-                            />
-                          </Card>
-                          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow">
-                            <Statistic
-                              title={
-                                <span className="text-white/90">
-                                  Technically Completed
-                                </span>
-                              }
-                              value={statistics.technicallyCompleted}
-                              valueStyle={{
-                                color: '#fff',
-                                fontSize: '28px',
-                                fontWeight: 'bold',
-                              }}
-                            />
-                          </Card>
-                          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow">
-                            <Statistic
-                              title={
-                                <span className="text-white/90">
-                                  Financially Completed
-                                </span>
-                              }
-                              value={statistics.financiallyCompleted}
-                              valueStyle={{
-                                color: '#fff',
-                                fontSize: '28px',
-                                fontWeight: 'bold',
-                              }}
-                            />
-                          </Card>
-                          <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow">
-                            <Statistic
-                              title={
-                                <span className="text-white/90">
-                                  Pending Projects
-                                </span>
-                              }
-                              value={statistics.pendingProjects}
-                              valueStyle={{
-                                color: '#fff',
-                                fontSize: '28px',
-                                fontWeight: 'bold',
-                              }}
-                            />
-                          </Card>
-                        </div>
+        <Tabs
+          defaultActiveKey="proposals"
+          items={[
+            {
+              key: 'proposals',
+              label: 'Proposals',
+              children: (
+                <div className="space-y-6">
+                  {/* Statistics Cards */}
+                  <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
+                    <Card
+                      className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => setStatusFilter(null)}
+                    >
+                      <Statistic
+                        title={
+                          <span className="text-white/90">
+                            Total Proposals
+                          </span>
+                        }
+                        value={statistics.totalProposals}
+                        valueStyle={{
+                          color: '#fff',
+                          fontSize: '28px',
+                          fontWeight: 'bold',
+                        }}
+                      />
+                    </Card>
+                    <Card
+                      className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => setStatusFilter('totalProjects')}
+                    >
+                      <Statistic
+                        title={
+                          <span className="text-white/90">
+                            Total Projects
+                          </span>
+                        }
+                        value={statistics.totalProjects}
+                        valueStyle={{
+                          color: '#fff',
+                          fontSize: '28px',
+                          fontWeight: 'bold',
+                        }}
+                      />
+                    </Card>
+                    <Card
+                      className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => setStatusFilter('technicallyCompleted')}
+                    >
+                      <Statistic
+                        title={
+                          <span className="text-white/90">
+                            Technically Completed
+                          </span>
+                        }
+                        value={statistics.technicallyCompleted}
+                        valueStyle={{
+                          color: '#fff',
+                          fontSize: '28px',
+                          fontWeight: 'bold',
+                        }}
+                      />
+                    </Card>
+                    <Card
+                      className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => setStatusFilter('financiallyCompleted')}
+                    >
+                      <Statistic
+                        title={
+                          <span className="text-white/90">
+                            Financially Completed
+                          </span>
+                        }
+                        value={statistics.financiallyCompleted}
+                        valueStyle={{
+                          color: '#fff',
+                          fontSize: '28px',
+                          fontWeight: 'bold',
+                        }}
+                      />
+                    </Card>
+                    <Card
+                      className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
+                      onClick={() => setStatusFilter('pendingProjects')}
+                    >
+                      <Statistic
+                        title={
+                          <span className="text-white/90">
+                            Pending Projects
+                          </span>
+                        }
+                        value={statistics.pendingProjects}
+                        valueStyle={{
+                          color: '#fff',
+                          fontSize: '28px',
+                          fontWeight: 'bold',
+                        }}
+                      />
+                    </Card>
+                  </div>
 
-                        {/* Search and Filters Section */}
-                        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-                          <div className="mb-4">
-                            <Title level={4} className="!mb-0">
-                              Search & Filters
-                            </Title>
-                          </div>
-                          <Row gutter={[16, 16]}>
-                            <Col xs={24} sm={12} md={6}>
-                              <Input
-                                placeholder="Search proposals... (type ID to search by PK)"
-                                prefix={<SearchOutlined />}
-                                value={searchText}
-                                onChange={(e) => setSearchText(e.target.value)}
-                                size="large"
-                                allowClear
-                              />
-                            </Col>
+                  {/* Search and Filters Section */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                    <div className="mb-4">
+                      <Title level={4} className="!mb-0">
+                        Search & Filters
+                      </Title>
+                    </div>
+                    <Row gutter={[16, 16]}>
+                      <Col xs={24} sm={12} md={6}>
+                        <Input
+                          placeholder="Search proposals... (type ID to search by PK)"
+                          prefix={<SearchOutlined />}
+                          value={searchText}
+                          onChange={(e) => setSearchText(e.target.value)}
+                          size="large"
+                          allowClear
+                        />
+                      </Col>
+                      {/* Clear Filters button (clears search + all filters) */}
+                      <Col xs={24} sm={12} md={2} className="flex items-center">
+                        <Button
+                          onClick={() => {
+                            setSearchText('')
+                            setCenterFilter(null)
+                            setOrderDateRange(null)
+                            setEnquiryDateRange(null)
+                            setStatusFilter(null)
+                          }}
+                          size="large"
+                          style={{ width: '100%' }}
+                        >
+                          Clear Filters
+                        </Button>
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <Select
+                          placeholder="Filter by Center"
+                          value={centerFilter}
+                          onChange={setCenterFilter}
+                          size="large"
+                          allowClear
+                          style={{ width: '100%' }}
+                        >
+                          {uniqueCenters.map((center) => (
+                            <Select.Option key={center} value={center}>
+                              {center}
+                            </Select.Option>
+                          ))}
+                        </Select>
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <RangePicker
+                          placeholder={['Start Order Date', 'End Order Date']}
+                          value={orderDateRange}
+                          onChange={setOrderDateRange}
+                          size="large"
+                          style={{ width: '100%' }}
+                          format="YYYY-MM-DD"
+                        />
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <RangePicker
+                          placeholder={[
+                            'Start Enquiry Date',
+                            'End Enquiry Date',
+                          ]}
+                          value={enquiryDateRange}
+                          onChange={setEnquiryDateRange}
+                          size="large"
+                          style={{ width: '100%' }}
+                          format="YYYY-MM-DD"
+                        />
+                      </Col>
+                    </Row>
+                    <div className="mt-4 flex justify-end gap-3">
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv"
+                        ref={fileInputRef}
+                        onChange={handleImportFileChange}
+                        style={{ display: 'none' }}
+                      />
+                      <Button
+                        onClick={() => fileInputRef.current && fileInputRef.current.click()}
+                        size="large"
+                      >
+                        Import Excel
+                      </Button>
+                      <Button
+                        type="primary"
+                        icon={<DownloadOutlined />}
+                        size="large"
+                        onClick={handleExportExcel}
+                        className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
+                      >
+                        Export to Excel
+                      </Button>
+                    </div>
+                  </div>
 
-                            {/* Clear Filters button (clears search + all filters) */}
-                            <Col xs={24} sm={12} md={2} className="flex items-center">
-                              <Button
-                                onClick={() => {
-                                  setSearchText('')
-                                  setCenterFilter(null)
-                                  setOrderDateRange(null)
-                                  setEnquiryDateRange(null)
-                                }}
-                                size="large"
-                                style={{ width: '100%' }}
-                              >
-                                Clear Filters
-                              </Button>
-                            </Col>
-
-                            <Col xs={24} sm={12} md={6}>
-                              <Select
-                                placeholder="Filter by Center"
-                                prefix={<FilterOutlined />}
-                                value={centerFilter}
-                                onChange={setCenterFilter}
-                                size="large"
-                                allowClear
-                                style={{ width: '100%' }}
-                              >
-                                {uniqueCenters.map((center) => (
-                                  <Select.Option key={center} value={center}>
-                                    {center}
-                                  </Select.Option>
+                  {importPreview && (
+                    <Modal
+                      title={
+                        importPreview
+                          ? `Import Preview – ${importPreview.rows.length} rows (${importPreview.sheetName})`
+                          : 'Import Preview'
+                      }
+                      open={importModalOpen}
+                      onCancel={() => {
+                        setImportModalOpen(false)
+                        setImportPreview(null)
+                      }}
+                      width={1100}
+                      footer={[
+                        <Button
+                          key="cancel"
+                          onClick={() => {
+                            setImportModalOpen(false)
+                            setImportPreview(null)
+                          }}
+                        >
+                          Cancel
+                        </Button>,
+                        <Button
+                          key="submit"
+                          type="primary"
+                          loading={bulkImportLoading}
+                          onClick={handleBulkImport}
+                        >
+                          Submit Import ({importPreview.rows.length} rows)
+                        </Button>,
+                      ]}
+                    >
+                      <div className="overflow-auto max-h-[60vh]">
+                        <table className="min-w-full border-collapse text-sm">
+                          <thead>
+                            <tr>
+                              {importPreview.headers.map((h, idx) => (
+                                <th
+                                  key={idx}
+                                  className="border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold"
+                                >
+                                  {h || `Column ${idx + 1}`}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {importPreview.rows.slice(0, 200).map((row, rIdx) => (
+                              <tr key={rIdx}>
+                                {importPreview.headers.map((_, cIdx) => (
+                                  <td
+                                    key={cIdx}
+                                    className="border border-slate-200 px-2 py-1"
+                                  >
+                                    {row[cIdx] ?? ''}
+                                  </td>
                                 ))}
-                              </Select>
-                            </Col>
-                            <Col xs={24} sm={12} md={6}>
-                              <RangePicker
-                                placeholder={['Start Order Date', 'End Order Date']}
-                                value={orderDateRange}
-                                onChange={setOrderDateRange}
-                                size="large"
-                                style={{ width: '100%' }}
-                                format="YYYY-MM-DD"
-                              />
-                            </Col>
-                            <Col xs={24} sm={12} md={6}>
-                              <RangePicker
-                                placeholder={[
-                                  'Start Enquiry Date',
-                                  'End Enquiry Date',
-                                ]}
-                                value={enquiryDateRange}
-                                onChange={setEnquiryDateRange}
-                                size="large"
-                                style={{ width: '100%' }}
-                                format="YYYY-MM-DD"
-                              />
-                            </Col>
-                          </Row>
-                          <div className="mt-4 flex justify-end">
-                            <Button
-                              type="primary"
-                              icon={<DownloadOutlined />}
-                              size="large"
-                              onClick={handleExportExcel}
-                              className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
-                            >
-                              Export to Excel
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Proposals Table */}
-                        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                          <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
-                            <div>
-                              <Title level={4} className="!mb-1">
-                                Proposal
-                              </Title>
-                              <p className="text-slate-500 text-sm">
-                                Showing {filteredData.length} of {tableData.length}{' '}
-                                proposals
-                              </p>
-                            </div>
-                            <ActionButtons label="Proposal" onAdd={openAddModal} />
-                          </div>
-                          <Table
-                            rowKey="key"
-                            columns={columns}
-                            dataSource={filteredData}
-                            loading={tableLoading}
-                            pagination={{ pageSize: 10 }}
-                            scroll={{ x: 4200 }}
-                            bordered
-                          />
-                        </div>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                        {importPreview.rows.length > 200 && (
+                          <p className="mt-2 text-xs text-slate-500">
+                            Showing first 200 rows of {importPreview.rows.length}.
+                          </p>
+                        )}
                       </div>
-                    ),
-                  },
-                ]}
-          />
-        </div>
+                    </Modal>
+                  )}
+
+                  {/* Proposals Table */}
+                  <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                    <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <Title level={4} className="!mb-1">
+                          Proposal
+                        </Title>
+                        <p className="text-slate-500 text-sm">
+                          Showing {filteredData.length} of {tableData.length}{' '}
+                          proposals
+                        </p>
+                      </div>
+                      <ActionButtons label="Proposal" onAdd={openAddModal} />
+                    </div>
+                    <Table
+                      rowKey="key"
+                      columns={columns}
+                      dataSource={filteredData}
+                      loading={tableLoading}
+                      pagination={{ pageSize: 10 }}
+                      scroll={{ x: 4200 }}
+                      bordered
+                    />
+                  </div>
+                </div>
+              ),
+            },
+          ]}
+        />
+      </div>
 
       <Modal
         title={editingRecord ? 'Edit Proposal' : 'Add Proposal'}

@@ -111,12 +111,6 @@ function Projects() {
 
       let rows = Array.isArray(data) ? data : []
 
-      if (coordinatorName) {
-        rows = rows.filter(
-          (item) => item.project_co_ordinator && item.project_co_ordinator === coordinatorName,
-        )
-      }
-
       console.log('Fetched projects (GH filtered):', rows)
       setProjectRows(rows)
     } catch (error) {

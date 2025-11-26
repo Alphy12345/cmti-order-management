@@ -8,6 +8,30 @@ const { Title, Text } = Typography
 
 const API_BASE_URL = 'http://10.1.1.13:8000'
 
+function parseApiError(error) {
+  if (!error) return 'Failed to create user'
+  const res = error.response
+  if (!res) {
+    return error.message || 'Failed to create user'
+  }
+
+  const { status, data } = res
+
+  if (typeof data === 'string' && data.trim()) return data
+  if (data) {
+    if (typeof data === 'object') {
+      if (data.detail) return data.detail
+      if (data.message) return data.message
+      if (data.errors) {
+        if (Array.isArray(data.errors)) return data.errors.join(', ')
+        return JSON.stringify(data.errors)
+      }
+    }
+  }
+
+  return `Request failed with status ${status}`
+}
+
 function CreateLogin() {
   const [loading, setLoading] = useState(false)
   const [form] = Form.useForm()
@@ -21,8 +45,19 @@ function CreateLogin() {
       navigate('/')
     } catch (error) {
       console.error(error)
-      const detail = error?.response?.data?.detail || 'Failed to create user'
+      const detail = parseApiError(error)
+      // Show backend error message
       message.error(detail)
+
+      // If backend says email already exists, surface it on the email field too
+      if (detail && typeof detail === 'string' && detail.toLowerCase().includes('email already exists')) {
+        form.setFields([
+          {
+            name: 'email',
+            errors: [detail],
+          },
+        ])
+      }
     } finally {
       setLoading(false)
     }
@@ -101,7 +136,12 @@ function CreateLogin() {
             label="Password"
             rules={[{ required: true, message: 'Please enter password' }]}
           >
-            <Input.Password placeholder="Enter password" />
+            <>
+              <Input.Password placeholder="Enter password" />
+              <Text type="secondary" className="text-xs">
+                Password should be 6 characters
+              </Text>
+            </>
           </Form.Item>
 
           <div className="md:col-span-2 flex justify-end gap-3 mt-2">
