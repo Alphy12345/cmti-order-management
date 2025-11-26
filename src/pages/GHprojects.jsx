@@ -86,13 +86,39 @@ function Projects() {
   const fetchProjects = async () => {
     setLoading(true)
     try {
-      const res = await fetch(`${apiBase}/proposals/`)
+      let coordinatorName = ''
+      let url = `${apiBase}/proposals/`
+
+      try {
+        const rawUser = window.localStorage.getItem('ppm_user')
+        if (rawUser) {
+          const parsedUser = JSON.parse(rawUser)
+          if (parsedUser && parsedUser.name) {
+            coordinatorName = parsedUser.name
+            const encodedName = encodeURIComponent(parsedUser.name)
+            url = `${apiBase}/proposals/by-name/${encodedName}`
+          }
+        }
+      } catch (storageError) {
+        console.error('Failed to read user from localStorage', storageError)
+      }
+
+      const res = await fetch(url)
       if (!res.ok) {
         throw new Error(`Failed to fetch projects: ${res.status}`)
       }
       const data = await res.json()
-      console.log('Fetched projects:', data)
-      setProjectRows(Array.isArray(data) ? data : [])
+
+      let rows = Array.isArray(data) ? data : []
+
+      if (coordinatorName) {
+        rows = rows.filter(
+          (item) => item.project_co_ordinator && item.project_co_ordinator === coordinatorName,
+        )
+      }
+
+      console.log('Fetched projects (GH filtered):', rows)
+      setProjectRows(rows)
     } catch (error) {
       console.error('Error fetching projects:', error)
       message.error('Failed to load projects')
@@ -675,19 +701,16 @@ function Projects() {
     )
   }
 
-  const filteredCards = cards.filter(p => p?.project_number);
-
   // Projects list view
   return (
     <div className="rounded-3xl bg-white p-6 shadow-sm">
       <Title level={3}>Projects</Title>
 
-      {filteredCards.length === 0 ? (
+      {cards.length === 0 ? (
         <Empty description="No projects available" />
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        
-          {filteredCards.map((project) => (
+          {cards.map((project) => (
             <Card key={safeId(project)} hoverable className="shadow-sm">
               <Space direction="vertical" size="middle" className="w-full">
                 <div>

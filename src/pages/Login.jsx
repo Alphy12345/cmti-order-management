@@ -60,7 +60,8 @@ function Login() {
       // Save minimal user payload if available
       if (response?.data) {
         const { user_id, name, role } = response.data
-        const userPayload = { user_id, name, role, email: values.email }
+        const normalizedRole = (role || '').toLowerCase() === 'admin' ? 'admin' : 'gh'
+        const userPayload = { user_id, name, role: normalizedRole, email: values.email }
         try {
           window.localStorage.setItem('ppm_user', JSON.stringify(userPayload))
         } catch (storageError) {
@@ -69,8 +70,9 @@ function Login() {
         }
       }
 
-      // navigate after success
-      navigate('/proposals')
+      // navigate after success based on role
+      const normalizedRole = (response?.data?.role || '').toLowerCase() === 'admin' ? 'admin' : 'gh'
+      navigate(`/${normalizedRole}/proposals`)
     } catch (error) {
       console.error('Login error:', error)
       const detail = parseApiError(error)

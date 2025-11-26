@@ -14,12 +14,25 @@ function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
 
+  const segments = location.pathname.split('/').filter(Boolean)
+  const basePath = segments[0] || 'admin'
+  const section = segments[1] || 'proposals'
+
   const selectedKey =
-    location.pathname === '/configuration'
-      ? 'configuration'
-      : location.pathname === '/projects'
-      ? 'projects'
-      : 'proposals'
+    section === 'configuration' ? 'configuration' : section === 'projects' ? 'projects' : 'proposals'
+
+  let userName = ''
+  try {
+    const rawUser = window.localStorage.getItem('ppm_user')
+    if (rawUser) {
+      const parsedUser = JSON.parse(rawUser)
+      if (parsedUser && parsedUser.name) {
+        userName = parsedUser.name
+      }
+    }
+  } catch (error) {
+    console.error('Failed to read user from localStorage', error)
+  }
 
   const handleLogout = () => {
     try {
@@ -42,22 +55,35 @@ function Sidebar() {
               className="h-16 w-auto object-contain"
             />
           </div>
+          {userName && (
+            <div className="mt-2 w-full text-center">
+              <Text type="secondary">Welcome,</Text>
+              <div>
+                <Text strong>{userName}</Text>
+              </div>
+            </div>
+          )}
         </div>
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
           onClick={(info) => {
-            if (info.key === 'configuration') navigate('/configuration')
-            else if (info.key === 'projects') navigate('/projects')
-            else navigate('/proposals')
+            const prefix = basePath === 'gh' ? '/gh' : '/admin'
+            if (info.key === 'configuration') navigate(`${prefix}/configuration`)
+            else if (info.key === 'projects') navigate(`${prefix}/projects`)
+            else navigate(`${prefix}/proposals`)
           }}
           items={[
             { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals' },
-            {
-              key: 'configuration',
-              icon: <SettingOutlined />,
-              label: 'Configuration',
-            },
+            ...(basePath === 'admin'
+              ? [
+                  {
+                    key: 'configuration',
+                    icon: <SettingOutlined />,
+                    label: 'Configuration',
+                  },
+                ]
+              : []),
             { key: 'projects', icon: <ProjectOutlined />, label: 'Projects' },
           ]}
           className="text-base"
