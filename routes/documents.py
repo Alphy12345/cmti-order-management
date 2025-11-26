@@ -34,11 +34,7 @@ def _ensure_related_entities(
             )
 
 
-@router.post(
-    "/",
-    response_model=DocumentResponse,
-    status_code=status.HTTP_201_CREATED,
-)
+@router.post("/", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)
 async def create_document(
     name: str = Form(...),
     description: Optional[str] = Form(None),
@@ -48,10 +44,14 @@ async def create_document(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
+
+    # Validate project & stage
     _ensure_related_entities(db, project_id, stage_id)
 
+    # Upload file to MinIO
     _, url = await upload_file_to_minio(file)
 
+    # Save document in DB
     document = Document(
         name=name,
         description=description,
@@ -63,25 +63,85 @@ async def create_document(
     db.add(document)
     db.commit()
     db.refresh(document)
-    return document
+
+    # -------------------------------------------------------------
+    # UPDATE PROPOSAL.CLOSER_REPORT = "Yes" ONLY IF stage == "Closure Report"
+    # -------------------------------------------------------------
+    if stage_id:
+        stage = db.query(Stage).filter(Stage.id == stage_id).first()
+        if stage and stage.name.strip().lower() == "closure report":
+            proposal = db.query(Proposal).filter(Proposal.id == project_id).first()
+            if proposal:
+                proposal.closer_report = "Yes"
+                db.commit()
+
+    # -------------------------------------------------------------
+    # RETURN DOCUMENT WITHOUT ANY closure_report FIELD LOGIC
+    # -------------------------------------------------------------
+    return DocumentResponse(
+        id=document.id,
+        name=document.name,
+        description=document.description,
+        url=document.url,
+        project_id=document.project_id,
+        stage_id=document.stage_id,
+        uploaded_by=document.uploaded_by,
+        created_at=document.created_at,
+        updated_at=document.updated_at,
+    )
+
 
 
 @router.get("/", response_model=List[DocumentResponse])
 def list_documents(db: Session = Depends(get_db)) -> List[DocumentResponse]:
-    return db.query(Document).all()
+
+    documents = db.query(Document).all()
+    result = []
+
+    for doc in documents:
+        stage_docs = db.query(Document).filter(Document.stage_id == doc.stage_id).first()
+        closure_report = "Uploaded" if stage_docs else "Not Uploaded"
+
+        result.append(
+            DocumentResponse(
+                id=doc.id,
+                name=doc.name,
+                description=doc.description,
+                url=doc.url,
+                project_id=doc.project_id,
+                stage_id=doc.stage_id,
+                uploaded_by=doc.uploaded_by,
+                created_at=doc.created_at,
+                updated_at=doc.updated_at,
+                closure_report=closure_report,
+            )
+        )
+
+    return result
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
-def get_document(
-    document_id: int, db: Session = Depends(get_db)
-) -> DocumentResponse:
-    document = db.query(Document).filter(Document.id == document_id).first()
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
-    return document
+def get_document(document_id: int, db: Session = Depends(get_db)) -> DocumentResponse:
+
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    stage_docs = db.query(Document).filter(Document.stage_id == doc.stage_id).first()
+    closure_report = "Uploaded" if stage_docs else "Not Uploaded"
+
+    return DocumentResponse(
+        id=doc.id,
+        name=doc.name,
+        description=doc.description,
+        url=doc.url,
+        project_id=doc.project_id,
+        stage_id=doc.stage_id,
+        uploaded_by=doc.uploaded_by,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        closure_report=closure_report,
+    )
 
 
 @router.put("/{document_id}", response_model=DocumentResponse)
@@ -95,54 +155,56 @@ async def update_document(
     file: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
-    document = db.query(Document).filter(Document.id == document_id).first()
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
+
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
 
     _ensure_related_entities(db, project_id, stage_id)
 
-    if name is not None:
-        document.name = name
-    if description is not None:
-        document.description = description
-    if project_id is not None:
-        document.project_id = project_id
-    if stage_id is not None:
-        document.stage_id = stage_id
-    if uploaded_by is not None:
-        document.uploaded_by = uploaded_by
+    if name: doc.name = name
+    if description: doc.description = description
+    if project_id: doc.project_id = project_id
+    if stage_id: doc.stage_id = stage_id
+    if uploaded_by: doc.uploaded_by = uploaded_by
 
-    if file is not None:
-        old_object_name = extract_object_name_from_url(document.url)
-        if old_object_name:
-            delete_file_from_minio(old_object_name)
+    if file:
+        old_name = extract_object_name_from_url(doc.url)
+        if old_name:
+            delete_file_from_minio(old_name)
         _, url = await upload_file_to_minio(file)
-        document.url = url
+        doc.url = url
 
-    db.add(document)
     db.commit()
-    db.refresh(document)
-    return document
+    db.refresh(doc)
+
+    stage_docs = db.query(Document).filter(Document.stage_id == doc.stage_id).first()
+    closure_report = "Uploaded" if stage_docs else "Not Uploaded"
+
+    return DocumentResponse(
+        id=doc.id,
+        name=doc.name,
+        description=doc.description,
+        url=doc.url,
+        project_id=doc.project_id,
+        stage_id=doc.stage_id,
+        uploaded_by=doc.uploaded_by,
+        created_at=doc.created_at,
+        updated_at=doc.updated_at,
+        closure_report=closure_report,
+    )
 
 
-@router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_document(
-    document_id: int, db: Session = Depends(get_db)
-) -> None:
-    document = db.query(Document).filter(Document.id == document_id).first()
-    if not document:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Document not found",
-        )
+@router.delete("/{document_id}", status_code=204)
+def delete_document(document_id: int, db: Session = Depends(get_db)) -> None:
 
-    object_name = extract_object_name_from_url(document.url)
-    if object_name:
-        delete_file_from_minio(object_name)
+    doc = db.query(Document).filter(Document.id == document_id).first()
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
 
-    db.delete(document)
+    obj = extract_object_name_from_url(doc.url)
+    if obj:
+        delete_file_from_minio(obj)
+
+    db.delete(doc)
     db.commit()
-

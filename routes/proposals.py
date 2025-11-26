@@ -2,10 +2,15 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from db import get_db
 from models.model import Document, Payment, Progress, Proposal, Stage
-from pydantic_schema.request import ProposalCreate, ProposalUpdate
+from pydantic_schema.request import (
+    ProposalCreate,
+    ProposalUpdate,
+    CoordinatorUpdate
+)
 from pydantic_schema.response import ProposalResponse
 
 router = APIRouter(prefix="/proposals", tags=["Proposals"])
@@ -17,13 +22,11 @@ router = APIRouter(prefix="/proposals", tags=["Proposals"])
 @router.post("/", response_model=ProposalResponse, status_code=status.HTTP_201_CREATED)
 def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> ProposalResponse:
 
-    # Handle Pydantic V1/V2 compatibility
     try:
         data = payload.dict(exclude_unset=True, by_alias=False)
     except AttributeError:
         data = payload.model_dump(exclude_unset=True, by_alias=False)
 
-    # include alias fields explicitly
     if getattr(payload, "revised_negotiated", None) is not None:
         data["revised_negotiated"] = payload.revised_negotiated
     if getattr(payload, "revised_negotiated_quote_date", None) is not None:
@@ -44,6 +47,25 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
 @router.get("/", response_model=List[ProposalResponse])
 def list_proposals(db: Session = Depends(get_db)) -> List[ProposalResponse]:
     return db.query(Proposal).all()
+
+
+# ------------------------------
+# GET PROPOSALS BY NAME
+# ------------------------------
+@router.get("/by-name/{name}", response_model=List[ProposalResponse])
+def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
+
+    proposals = db.query(Proposal).filter(
+        func.lower(Proposal.quotation_given_by_name) == name.lower()
+    ).all()
+
+    if not proposals:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No proposals found for quotation_given_by_name = '{name}'"
+        )
+
+    return proposals
 
 
 # ------------------------------
@@ -69,13 +91,11 @@ def update_proposal(
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
 
-    # Handle Pydantic V1/V2
     try:
         update_data = payload.dict(exclude_unset=True, by_alias=False)
     except AttributeError:
         update_data = payload.model_dump(exclude_unset=True, by_alias=False)
 
-    # include alias fields explicitly
     if getattr(payload, "revised_negotiated", None) is not None:
         update_data["revised_negotiated"] = payload.revised_negotiated
     if getattr(payload, "revised_negotiated_quote_date", None) is not None:
@@ -92,7 +112,7 @@ def update_proposal(
 
 
 # ------------------------------
-# DELETE PROPOSAL (CASCADE DELETE)
+# DELETE PROPOSAL
 # ------------------------------
 @router.delete("/{proposal_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_proposal(proposal_id: int, db: Session = Depends(get_db)) -> None:
@@ -101,9 +121,57 @@ def delete_proposal(proposal_id: int, db: Session = Depends(get_db)) -> None:
     if not proposal:
         raise HTTPException(status_code=404, detail="Proposal not found")
 
-    # Cascade delete works automatically because of the model FK + relationship settings
     db.delete(proposal)
     db.commit()
+
+
+# ------------------------------
+# NEW: COORDINATOR UPDATE ENDPOINT
+# ------------------------------
+@router.post("/coordinator-update")
+def coordinator_update(payload: CoordinatorUpdate, db: Session = Depends(get_db)):
+
+    proposal = db.query(Proposal).filter(Proposal.id == payload.project_id).first()
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Project / Proposal not found")
+
+    # Validate technical completed year → closure report must exist
+    if payload.technical_completed_year:
+
+        closure_doc = (
+            db.query(Document)
+            .filter(
+                Document.project_id == payload.project_id,
+                func.lower(Document.name) == "closure report"
+            )
+            .first()
+        )
+
+        has_flag = proposal.closer_report and proposal.closer_report.lower() == "yes"
+
+        if not closure_doc and not has_flag:
+            raise HTTPException(
+                status_code=400,
+                detail="Closure Report not uploaded. Upload closure report before entering technical completed year."
+            )
+
+    # Apply updates
+    proposal.co_ordinator_remarks = payload.co_ordinator_remarks
+    proposal.extended_delivery_date = payload.extended_delivery_date
+
+    # ⭐ NEW FIELD HERE
+    proposal.updated_by = payload.updated_by
+
+    if payload.technical_completed_year:
+        proposal.technical_completed_year = payload.technical_completed_year
+
+    db.commit()
+    db.refresh(proposal)
+
+    return {
+        "message": "Coordinator details updated successfully",
+        "data": proposal
+    }
 
 
 # ------------------------------

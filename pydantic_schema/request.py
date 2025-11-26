@@ -3,6 +3,9 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# ---------------------------------------------
+# PROPOSAL BASE
+# ---------------------------------------------
 class ProposalBase(BaseModel):
     enquiry_date: Optional[str] = None
     customer_type: Optional[str] = None
@@ -16,6 +19,7 @@ class ProposalBase(BaseModel):
     quote_description: Optional[str] = None
     quote_date: Optional[str] = None
     quote_amount: Optional[str] = None
+
     revised_negotiated: Optional[str] = Field(
         default=None, alias="revised/negotiated"
     )
@@ -25,6 +29,7 @@ class ProposalBase(BaseModel):
     revised_negotiated_quote_amount: Optional[str] = Field(
         default=None, alias="revised/negotiated_quote_amount"
     )
+
     quotation_given_by_name: Optional[str] = None
     quotation_given_by_department: Optional[str] = None
     project_number: Optional[str] = None
@@ -52,6 +57,7 @@ class ProposalBase(BaseModel):
         allow_population_by_field_name = True
 
 
+# CREATE & UPDATE PROPOSAL
 class ProposalCreate(ProposalBase):
     pass
 
@@ -60,6 +66,20 @@ class ProposalUpdate(ProposalBase):
     pass
 
 
+# ---------------------------------------------
+# NEW: COORDINATOR UPDATE SCHEMA
+# ---------------------------------------------
+class CoordinatorUpdate(BaseModel):
+    project_id: int
+    co_ordinator_remarks: str
+    extended_delivery_date: str
+    technical_completed_year: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+# ---------------------------------------------
+# STAGE SCHEMAS
+# ---------------------------------------------
 class StageBase(BaseModel):
     name: Optional[str] = None
 
@@ -72,6 +92,9 @@ class StageUpdate(StageBase):
     pass
 
 
+# ---------------------------------------------
+# PAYMENT SCHEMAS
+# ---------------------------------------------
 class PaymentBase(BaseModel):
     invoice_no: Optional[str] = None
     invoice_date: Optional[str] = None
@@ -97,6 +120,9 @@ class PaymentUpdate(PaymentBase):
     pass
 
 
+# ---------------------------------------------
+# PROGRESS SCHEMAS
+# ---------------------------------------------
 class ProgressBase(BaseModel):
     remarks: Optional[str] = None
     project_id: Optional[int] = None
@@ -110,4 +136,3 @@ class ProgressCreate(ProgressBase):
 
 class ProgressUpdate(ProgressBase):
     pass
-

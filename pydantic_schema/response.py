@@ -1,9 +1,12 @@
 from datetime import datetime
-from typing import Optional, Any, Dict
+from typing import Optional
 
-from pydantic import BaseModel, Field, root_validator
+from pydantic import BaseModel, Field
 
 
+# ---------------------------------------------------------
+# PROPOSAL RESPONSE
+# ---------------------------------------------------------
 class ProposalResponse(BaseModel):
     id: int
     enquiry_date: Optional[str] = None
@@ -18,6 +21,7 @@ class ProposalResponse(BaseModel):
     quote_description: Optional[str] = None
     quote_date: Optional[str] = None
     quote_amount: Optional[str] = None
+
     revised_negotiated: Optional[str] = Field(
         default=None, alias="revised/negotiated"
     )
@@ -27,7 +31,7 @@ class ProposalResponse(BaseModel):
     revised_negotiated_quote_amount: Optional[str] = Field(
         default=None, alias="revised/negotiated_quote_amount"
     )
-    
+
     quotation_given_by_name: Optional[str] = None
     quotation_given_by_department: Optional[str] = None
     project_number: Optional[str] = None
@@ -44,12 +48,16 @@ class ProposalResponse(BaseModel):
     project_co_ordinator: Optional[str] = None
     center: Optional[str] = None
     co_ordinator_remarks: Optional[str] = None
+
+    # THIS FIELD MUST UPDATE FROM DOCUMENT API
     closer_report: Optional[str] = None
+
     technical_completed_year: Optional[str] = None
     financial_completed_year: Optional[str] = None
     dispatch_date: Optional[str] = None
     ppm_remarks: Optional[str] = None
     updated_by: Optional[str] = None
+
     created_at: datetime
     updated_at: datetime
 
@@ -58,6 +66,9 @@ class ProposalResponse(BaseModel):
         populate_by_name = True
 
 
+# ---------------------------------------------------------
+# STAGE RESPONSE
+# ---------------------------------------------------------
 class StageResponse(BaseModel):
     id: int
     name: Optional[str] = None
@@ -67,6 +78,9 @@ class StageResponse(BaseModel):
         orm_mode = True
 
 
+# ---------------------------------------------------------
+# PAYMENT RESPONSE
+# ---------------------------------------------------------
 class PaymentResponse(BaseModel):
     id: int
     invoice_no: Optional[str] = None
@@ -90,6 +104,9 @@ class PaymentResponse(BaseModel):
         orm_mode = True
 
 
+# ---------------------------------------------------------
+# DOCUMENT RESPONSE (Updated)
+# ---------------------------------------------------------
 class DocumentResponse(BaseModel):
     id: int
     name: Optional[str] = None
@@ -101,10 +118,16 @@ class DocumentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    # This is manually computed in /documents API (not in DB)
+    closure_report: Optional[str] = None
+
     class Config:
         orm_mode = True
 
 
+# ---------------------------------------------------------
+# PROGRESS RESPONSE
+# ---------------------------------------------------------
 class ProgressResponse(BaseModel):
     id: int
     remarks: Optional[str] = None
@@ -115,4 +138,3 @@ class ProgressResponse(BaseModel):
 
     class Config:
         orm_mode = True
-
