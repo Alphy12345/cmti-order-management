@@ -11,6 +11,8 @@ from pydantic_schema.request import (
     ProposalUpdate,
     CoordinatorUpdate
 )
+from typing import List as ListType
+from fastapi.encoders import jsonable_encoder
 from pydantic_schema.response import ProposalResponse
 
 router = APIRouter(prefix="/proposals", tags=["Proposals"])
@@ -272,3 +274,50 @@ def stage_wise_details(proposal_id: int, db: Session = Depends(get_db)):
         )
 
     return response
+
+
+# ------------------------------
+# BULK CREATE PROPOSALS
+# ------------------------------
+@router.post("/bulk", response_model=List[ProposalResponse], status_code=status.HTTP_201_CREATED)
+def bulk_create_proposals(
+    proposals: ListType[ProposalCreate], 
+    db: Session = Depends(get_db)
+) -> List[ProposalResponse]:
+    """
+    Create multiple proposals in a single request.
+    
+    Args:
+        proposals: List of proposal data to create
+        db: Database session
+        
+    Returns:
+        List of created proposals with their IDs
+    """
+    created_proposals = []
+    
+    for proposal_data in proposals:
+        try:
+            data = proposal_data.dict(exclude_unset=True, by_alias=False)
+        except AttributeError:
+            data = proposal_data.model_dump(exclude_unset=True, by_alias=False)
+            
+        # Handle revised_negotiated fields if present
+        if getattr(proposal_data, "revised_negotiated", None) is not None:
+            data["revised_negotiated"] = proposal_data.revised_negotiated
+        if getattr(proposal_data, "revised_negotiated_quote_date", None) is not None:
+            data["revised_negotiated_quote_date"] = proposal_data.revised_negotiated_quote_date
+        if getattr(proposal_data, "revised_negotiated_quote_amount", None) is not None:
+            data["revised_negotiated_quote_amount"] = proposal_data.revised_negotiated_quote_amount
+            
+        proposal = Proposal(**data)
+        db.add(proposal)
+        created_proposals.append(proposal)
+    
+    db.commit()
+    
+    # Refresh all created proposals to get their database-generated fields
+    for proposal in created_proposals:
+        db.refresh(proposal)
+    
+    return created_proposals
