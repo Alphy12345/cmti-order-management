@@ -144,6 +144,7 @@ function Proposals() {
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
+  const [currentUserName, setCurrentUserName] = useState('')
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -157,6 +158,7 @@ function Proposals() {
           const parsedUser = JSON.parse(rawUser)
           if (parsedUser && parsedUser.name) {
             coordinatorName = parsedUser.name
+            setCurrentUserName(parsedUser.name)
             const encodedName = encodeURIComponent(parsedUser.name)
             url = `${API_BASE_URL}/proposals/by-name/${encodedName}`
           }
@@ -191,16 +193,19 @@ function Proposals() {
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
     form.resetFields()
+    if (currentUserName) {
+      form.setFieldsValue({ updated_by: currentUserName })
+    }
     setModalOpen(true)
-  }, [form])
+  }, [form, currentUserName])
 
   const openEditModal = useCallback(
     (record) => {
       setEditingRecord(record)
-      form.setFieldsValue(record)
+      form.setFieldsValue({ ...record, updated_by: currentUserName || record.updated_by })
       setModalOpen(true)
     },
-    [form],
+    [form, currentUserName],
   )
 
   const closeModal = useCallback(() => {
@@ -225,7 +230,7 @@ function Proposals() {
         co_ordinator_remarks: values.co_ordinator_remarks ?? '',
         extended_delivery_date: values.extended_delivery_date ?? '',
         technical_completed_year: values.technical_completed_year ?? '',
-        updated_by: values.updated_by ?? '',
+        updated_by: currentUserName || values.updated_by || '',
       }
     } else {
       // Create follows the general proposals API
@@ -844,6 +849,7 @@ function Proposals() {
               }
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
+              const isUpdatedByField = field.name === 'updated_by'
               return (
                 <Form.Item
                   key={field.name}
@@ -862,6 +868,7 @@ function Proposals() {
                 >
                   <InputComponent
                     rows={field.input === 'textarea' ? 2 : undefined}
+                    disabled={isUpdatedByField}
                   />
                 </Form.Item>
               )

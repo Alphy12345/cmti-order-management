@@ -148,6 +148,7 @@ function Proposals() {
   const [importModalOpen, setImportModalOpen] = useState(false)
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
+  const [currentUserName, setCurrentUserName] = useState('')
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -171,22 +172,37 @@ function Proposals() {
   }, [])
 
   useEffect(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser && parsedUser.name) {
+          setCurrentUserName(parsedUser.name)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error)
+    }
+
     fetchProposals()
   }, [fetchProposals])
 
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
     form.resetFields()
+    if (currentUserName) {
+      form.setFieldsValue({ updated_by: currentUserName })
+    }
     setModalOpen(true)
-  }, [form])
+  }, [form, currentUserName])
 
   const openEditModal = useCallback(
     (record) => {
       setEditingRecord(record)
-      form.setFieldsValue(record)
+      form.setFieldsValue({ ...record, updated_by: currentUserName || record.updated_by })
       setModalOpen(true)
     },
-    [form],
+    [form, currentUserName],
   )
 
   const closeModal = useCallback(() => {
@@ -1006,7 +1022,9 @@ function Proposals() {
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
-          initialValues={{ updated_by: '' }}
+          initialValues={{
+            updated_by: localStorage.getItem('loggedInUser'),
+          }}
         >
           <div className="grid gap-4 md:grid-cols-2">
             {FORM_FIELDS.map((field) => {
@@ -1063,6 +1081,7 @@ function Proposals() {
               }
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
+              const isUpdatedByField = field.name === 'updated_by'
               return (
                 <Form.Item
                   key={field.name}
@@ -1081,6 +1100,7 @@ function Proposals() {
                 >
                   <InputComponent
                     rows={field.input === 'textarea' ? 2 : undefined}
+                    disabled={isUpdatedByField}
                   />
                 </Form.Item>
               )
