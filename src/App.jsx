@@ -55,8 +55,8 @@ function RoleProtectedLayout({ basePath }) {
   return (
     <Layout className="min-h-screen">
       <Sidebar />
-      <Layout className="bg-slate-100">
-        <Content className="p-6">
+      <Layout className="bg-slate-100" style={{ marginLeft: 260, minHeight: '100vh' }}>
+        <Content className="p-6" style={{ height: '100vh', overflowY: 'auto' }}>
           <Routes>
             <Route path="proposals" element={<ProposalsComponent />} />
             {isAdmin && <Route path="configuration" element={<Configuration />} />}

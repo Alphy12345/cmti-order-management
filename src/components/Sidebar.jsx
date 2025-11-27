@@ -45,7 +45,11 @@ function Sidebar() {
   }
 
   return (
-    <Sider width={260} className="bg-white shadow-lg flex flex-col justify-between">
+    <Sider
+      width={260}
+      className="bg-white shadow-lg flex flex-col justify-between"
+      style={{ position: 'fixed', left: 0, top: 0, bottom: 0, height: '100vh', zIndex: 100 }}
+    >
       <div>
         <div className="flex flex-col items-start gap-4 px-6 py-8 border-b border-slate-200">
           <div className="w-full flex items-center justify-center">
