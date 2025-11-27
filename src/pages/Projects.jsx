@@ -43,12 +43,36 @@ const { Dragger } = Upload
 const formatValue = (value) => (value ? value : 'Not available')
 const safeId = (item) => item?.id ?? item?.key ?? ''
 
+const getProjectTheme = (projectNumber) => {
+  const num = (projectNumber || '').toString().toUpperCase()
+  if (num.includes('ISP')) {
+    return {
+      cardClass: 'border-l-4 border-blue-500 bg-blue-50',
+      pillClass: 'bg-blue-500/10 text-blue-700 border border-blue-500/30',
+      pillLabel: 'ISP',
+    }
+  }
+  if (num.includes('GSP')) {
+    return {
+      cardClass: 'border-l-4 border-red-500 bg-red-50',
+      pillClass: 'bg-red-500/10 text-red-700 border border-red-500/30',
+      pillLabel: 'GSP',
+    }
+  }
+  return {
+    cardClass: 'border-l-4 border-green-500 bg-green-50',
+    pillClass: 'bg-green-500/10 text-green-700 border border-green-500/30',
+    pillLabel: 'Other',
+  }
+}
+
 function Projects() {
   const apiBase = 'http://10.1.1.13:8000'
   
   // Projects list state
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [currentUserName, setCurrentUserName] = useState('')
   
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
@@ -79,8 +103,20 @@ function Projects() {
   const [editingPayment, setEditingPayment] = useState(null)
   const [submittingPayment, setSubmittingPayment] = useState(false)
 
-  // Fetch projects on mount
+  // Fetch projects on mount and read current user from localStorage
   useEffect(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser && parsedUser.name) {
+          setCurrentUserName(parsedUser.name)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error)
+    }
+
     fetchProjects()
   }, [])
 
@@ -146,8 +182,8 @@ function Projects() {
     setSelectedStageForUpload(stage)
     setUploadModalVisible(true)
     setFileToUpload(null)
-    setDocumentName('')
-    setUploadedBy('')
+    setDocumentName((stage.stage_name || 'Document').toString())
+    setUploadedBy(currentUserName || '')
     setDescription('')
   }
 
@@ -159,8 +195,8 @@ function Projects() {
 
   const handleUpload = async () => {
     if (!fileToUpload) return message.error('Please select a file')
-    if (!documentName.trim()) return message.error('Document name is required')
-    if (!uploadedBy.trim()) return message.error('Your name is required')
+    const uploader = (uploadedBy || currentUserName || '').trim()
+    if (!uploader) return message.error('Your name is required')
 
     setUploading(true)
     const formData = new FormData()
@@ -168,7 +204,7 @@ function Projects() {
     formData.append('description', description.trim())
     formData.append('project_id', safeId(selectedProject))
     formData.append('stage_id', selectedStageForUpload.stage_id)
-    formData.append('uploaded_by', uploadedBy.trim())
+    formData.append('uploaded_by', uploader)
     formData.append('file', fileToUpload)
 
     try {
@@ -432,7 +468,6 @@ function Projects() {
     maxCount: 1,
     beforeUpload: (file) => {
       setFileToUpload(file)
-      if (!documentName) setDocumentName(file.name.split('.').slice(0, -1).join('.'))
       return false
     },
     onRemove: () => {
@@ -668,9 +703,9 @@ function Projects() {
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">Click or drag file to this area</p>
             </Dragger>
-            <Input placeholder="Document Name *" value={documentName} onChange={(e) => setDocumentName(e.target.value)} />
+            <Input placeholder="Document Name *" value={documentName} disabled />
             <TextArea placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-            <Input placeholder="Your Name *" value={uploadedBy} onChange={(e) => setUploadedBy(e.target.value)} />
+            <Input placeholder="Your Name *" value={uploadedBy} disabled />
           </Space>
         </Modal>
 
@@ -760,22 +795,36 @@ function Projects() {
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
           {filteredCards.map((project) => (
-            <Card key={safeId(project)} hoverable className="shadow-sm">
-              <Space direction="vertical" size="middle" className="w-full">
-                <div>
-                  <Text type="secondary">Project No.</Text>
-                  <Text strong className="block text-lg">{formatValue(project.project_number)}</Text>
-                </div>
-                <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
-                <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
-                {project.center && (
-                  <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
-                )}
-                <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewProject(project)}>
-                  View Details
-                </Button>
-              </Space>
-            </Card>
+            (() => {
+              const theme = getProjectTheme(project.project_number)
+              return (
+                <Card
+                  key={safeId(project)}
+                  hoverable
+                  className={`shadow-sm border ${theme.cardClass}`}
+                >
+                  <Space direction="vertical" size="middle" className="w-full">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Text type="secondary">Project No.</Text>
+                        <Text strong className="block text-lg">{formatValue(project.project_number)}</Text>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${theme.pillClass}`}>
+                        {theme.pillLabel}
+                      </span>
+                    </div>
+                    <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
+                    <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
+                    {project.center && (
+                      <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
+                    )}
+                    <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewProject(project)}>
+                      View Details
+                    </Button>
+                  </Space>
+                </Card>
+              )
+            })()
           ))}
         </div>
       )}

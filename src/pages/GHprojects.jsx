@@ -48,6 +48,33 @@ const { Dragger } = Upload
 const formatValue = (value) => (value ? value : 'Not available')
 const safeId = (item) => item?.id ?? item?.key ?? ''
 
+// Color theme for cards based on project number (same as admin Projects page)
+const getProjectTheme = (projectNumber) => {
+  const num = (projectNumber || '').toString().toUpperCase()
+
+  if (num.includes('ISP')) {
+    return {
+      cardClass: 'bg-blue-50 border-l-4 border-blue-500',
+      pillClass: 'bg-blue-500 text-white',
+      pillLabel: 'ISP',
+    }
+  }
+
+  if (num.includes('GSP')) {
+    return {
+      cardClass: 'bg-red-50 border-l-4 border-red-500',
+      pillClass: 'bg-red-500 text-white',
+      pillLabel: 'GSP',
+    }
+  }
+
+  return {
+    cardClass: 'bg-green-50 border-l-4 border-green-500',
+    pillClass: 'bg-green-600 text-white',
+    pillLabel: 'Other',
+  }
+}
+
 function Projects() {
   const apiBase = 'http://10.1.1.13:8000'
   
@@ -784,22 +811,40 @@ function Projects() {
         <Empty description="No projects match the current filters" />
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 justify-center">
-          {filteredCards.map((project) => (
-            <Card key={safeId(project)} hoverable className="shadow-sm">
-              <Space direction="vertical" size="middle" className="w-full">
-                <div>
-                  <Text type="secondary">Project No.</Text>
-                  <Text strong className="block text-lg">{formatValue(project.project_number)}</Text>
-                </div>
-                <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
-                <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
-                <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
-                <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewProject(project)}>
-                  View Details
-                </Button>
-              </Space>
-            </Card>
-          ))}
+          {filteredCards.map((project) => {
+            const theme = getProjectTheme(project.project_number)
+            return (
+              <Card
+                key={safeId(project)}
+                hoverable
+                className={`shadow-sm border ${theme.cardClass}`}
+              >
+                <Space direction="vertical" size="middle" className="w-full">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <Text type="secondary">Project No.</Text>
+                      <Text strong className="block text-lg">
+                        {formatValue(project.project_number)}
+                      </Text>
+                    </div>
+                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${theme.pillClass}`}>
+                      {theme.pillLabel}
+                    </span>
+                  </div>
+                  <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
+                  <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
+                  <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
+                  <Button
+                    type="primary"
+                    icon={<EyeOutlined />}
+                    onClick={() => handleViewProject(project)}
+                  >
+                    View Details
+                  </Button>
+                </Space>
+              </Card>
+            )
+          })}
         </div>
       )}
     </div>
