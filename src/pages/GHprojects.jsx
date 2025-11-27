@@ -17,7 +17,11 @@ import {
   Popconfirm,
   Form,
   DatePicker,
+  Row,
+  Col,
+  Select,
 } from 'antd'
+
 import {
   EyeOutlined,
   FileTextOutlined,
@@ -30,7 +34,9 @@ import {
   EditOutlined,
   DeleteOutlined,
   ArrowLeftOutlined,
+  SearchOutlined,
 } from '@ant-design/icons'
+
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 dayjs.extend(customParseFormat)
@@ -48,6 +54,10 @@ function Projects() {
   // Projects list state
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
+  const [searchText, setSearchText] = useState('')
+  const [centerFilter, setCenterFilter] = useState(null)
+  
+  const [currentUserName, setCurrentUserName] = useState('')
   
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
@@ -95,6 +105,7 @@ function Projects() {
           const parsedUser = JSON.parse(rawUser)
           if (parsedUser && parsedUser.name) {
             coordinatorName = parsedUser.name
+            setCurrentUserName(parsedUser.name)
             const encodedName = encodeURIComponent(parsedUser.name)
             url = `${apiBase}/proposals/by-name/${encodedName}`
           }
@@ -124,8 +135,37 @@ function Projects() {
 
   const cards = useMemo(() => projectRows || [], [projectRows])
 
+  const uniqueCenters = useMemo(() => {
+    const centers = [...new Set((projectRows || []).map((item) => item.center).filter(Boolean))]
+    return centers.sort()
+  }, [projectRows])
+
+  const filteredCards = useMemo(() => {
+    let rows = cards.filter((p) => p?.project_number)
+
+    if (searchText.trim()) {
+      const s = searchText.trim().toLowerCase()
+      rows = rows.filter((item) => {
+        const values = [
+          item.project_number,
+          item.activity,
+          item.project_co_ordinator,
+          item.party_name,
+          item.center,
+        ]
+        return values.some((val) => val && String(val).toLowerCase().includes(s))
+      })
+    }
+
+    if (centerFilter) {
+      rows = rows.filter((item) => item.center === centerFilter)
+    }
+
+    return rows
+  }, [cards, searchText, centerFilter])
+
   const restrictedStages = {
-    uploadDisabled: ['progress', 'payments'],
+    uploadDisabled: ['enquiry', 'proposal', 'progress', 'payments'],
     remarksDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'payments', 'closure report'],
     paymentDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'progress', 'closure report'],
   }
@@ -166,7 +206,7 @@ function Projects() {
     setUploadModalVisible(true)
     setFileToUpload(null)
     setDocumentName('')
-    setUploadedBy('')
+    setUploadedBy(currentUserName)
     setDescription('')
   }
 
@@ -179,7 +219,9 @@ function Projects() {
   const handleUpload = async () => {
     if (!fileToUpload) return message.error('Please select a file')
     if (!documentName.trim()) return message.error('Document name is required')
-    if (!uploadedBy.trim()) return message.error('Your name is required')
+
+    const uploader = (currentUserName || '').trim()
+    if (!uploader) return message.error('Your name is required')
 
     setUploading(true)
     const formData = new FormData()
@@ -187,7 +229,8 @@ function Projects() {
     formData.append('description', description.trim())
     formData.append('project_id', safeId(selectedProject))
     formData.append('stage_id', selectedStageForUpload.stage_id)
-    formData.append('uploaded_by', uploadedBy.trim())
+    formData.append('uploaded_by', uploader)
+
     formData.append('file', fileToUpload)
 
     try {
@@ -215,7 +258,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setRemarksModalVisible(true)
     setRemarksText('')
-    setRemarksBy('')
+    setRemarksBy(currentUserName)
     setEditingRemark(null)
   }
 
@@ -223,7 +266,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setEditingRemark(remark)
     setRemarksText(remark.remarks || '')
-    setRemarksBy(remark.updated_by || '')
+    setRemarksBy(currentUserName || remark.updated_by || '')
     setRemarksModalVisible(true)
   }
 
@@ -241,7 +284,8 @@ function Projects() {
 
   const handleSubmitRemarks = async () => {
     if (!remarksText.trim()) return message.error('Remarks required')
-    if (!remarksBy.trim()) return message.error('Your name required')
+
+    const name = currentUserName
 
     setSubmittingRemarks(true)
     try {
@@ -253,7 +297,7 @@ function Projects() {
             project_id: safeId(selectedProject),
             stage_id: selectedStageForRemarks.stage_id,
             remarks: remarksText.trim(),
-            updated_by: remarksBy.trim(),
+            updated_by: name,
           }),
         })
         if (!res.ok) {
@@ -269,7 +313,7 @@ function Projects() {
             project_id: safeId(selectedProject),
             stage_id: selectedStageForRemarks.stage_id,
             remarks: remarksText.trim(),
-            updated_by: remarksBy.trim(),
+            updated_by: name,
           }),
         })
         if (!res.ok) throw new Error('Failed to add remark')
@@ -650,7 +694,7 @@ function Projects() {
             </Dragger>
             <Input placeholder="Document Name *" value={documentName} onChange={(e) => setDocumentName(e.target.value)} />
             <TextArea placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-            <Input placeholder="Your Name *" value={uploadedBy} onChange={(e) => setUploadedBy(e.target.value)} />
+            <Input placeholder="Your Name *" value={currentUserName} disabled />
           </Space>
         </Modal>
 
@@ -678,7 +722,7 @@ function Projects() {
         >
           <Space direction="vertical" size="large" className="w-full">
             <TextArea placeholder="Enter your remarks *" value={remarksText} onChange={(e) => setRemarksText(e.target.value)} rows={4} />
-            <Input placeholder="Your Name *" value={remarksBy} onChange={(e) => setRemarksBy(e.target.value)} />
+            <Input placeholder="Your Name *" value={currentUserName} disabled />
           </Space>
         </Modal>
 
@@ -700,11 +744,54 @@ function Projects() {
     <div className="rounded-3xl bg-white p-6 shadow-sm">
       <Title level={3}>Projects</Title>
 
-      {cards.length === 0 ? (
+      <div className="mt-4 mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <Row gutter={[16, 16]}>
+          <Col xs={24} sm={12} md={8}>
+            <Input
+              placeholder="Search projects..."
+              prefix={<SearchOutlined />}
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              allowClear
+              size="large"
+            />
+          </Col>
+          <Col xs={24} sm={12} md={8}>
+            <Select
+              placeholder="Filter by Center"
+              value={centerFilter}
+              onChange={setCenterFilter}
+              size="large"
+              allowClear
+              style={{ width: '100%' }}
+            >
+              {uniqueCenters.map((center) => (
+                <Select.Option key={center} value={center}>
+                  {center}
+                </Select.Option>
+              ))}
+            </Select>
+          </Col>
+          <Col xs={24} sm={12} md={8} className="flex items-center">
+            <Button
+              onClick={() => {
+                setSearchText('')
+                setCenterFilter(null)
+              }}
+              size="large"
+              style={{ width: '100%' }}
+            >
+              Clear Filters
+            </Button>
+          </Col>
+        </Row>
+      </div>
+
+      {filteredCards.length === 0 ? (
         <Empty description="No projects available" />
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-          {cards.map((project) => (
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 justify-center">
+          {filteredCards.map((project) => (
             <Card key={safeId(project)} hoverable className="shadow-sm">
               <Space direction="vertical" size="middle" className="w-full">
                 <div>
@@ -713,6 +800,7 @@ function Projects() {
                 </div>
                 <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
                 <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
+                <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
                 <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewProject(project)}>
                   View Details
                 </Button>
