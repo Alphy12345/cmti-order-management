@@ -54,8 +54,6 @@ function Projects() {
   // Projects list state
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
-  const [searchText, setSearchText] = useState('')
-  const [centerFilter, setCenterFilter] = useState(null)
   
   const [currentUserName, setCurrentUserName] = useState('')
   
@@ -133,39 +131,44 @@ function Projects() {
     }
   }
 
-  const cards = useMemo(() => projectRows || [], [projectRows])
+  const [searchText, setSearchText] = useState('')
+  const [selectedCenter, setSelectedCenter] = useState(undefined)
 
-  const uniqueCenters = useMemo(() => {
-    const centers = [...new Set((projectRows || []).map((item) => item.center).filter(Boolean))]
-    return centers.sort()
+  const centerOptions = useMemo(() => {
+    const centers = [...new Set(projectRows
+      .map(p => p.center?.trim())
+      .filter(Boolean))]
+
+    return centers.sort().map(c => ({ label: c, value: c }))
   }, [projectRows])
 
   const filteredCards = useMemo(() => {
-    let rows = cards.filter((p) => p?.project_number)
+    return (projectRows || [])
+      .filter(p => p?.project_number)
+      .filter(p => {
+        const searchLower = searchText.toLowerCase().trim()
+        if (searchLower) {
+          const inNumber   = p.project_number?.toString().toLowerCase().includes(searchLower)
+          const inActivity = p.activity?.toLowerCase().includes(searchLower)
+          const inCoord    = p.project_co_ordinator?.toLowerCase().includes(searchLower)
+          if (!(inNumber || inActivity || inCoord)) return false
+        }
 
-    if (searchText.trim()) {
-      const s = searchText.trim().toLowerCase()
-      rows = rows.filter((item) => {
-        const values = [
-          item.project_number,
-          item.activity,
-          item.project_co_ordinator,
-          item.party_name,
-          item.center,
-        ]
-        return values.some((val) => val && String(val).toLowerCase().includes(s))
+        if (selectedCenter && p.center?.trim() !== selectedCenter) return false
+
+        return true
       })
-    }
+  }, [projectRows, searchText, selectedCenter])
 
-    if (centerFilter) {
-      rows = rows.filter((item) => item.center === centerFilter)
-    }
+  const handleClearFilters = () => {
+    setSearchText('')
+    setSelectedCenter(undefined)
+  }
 
-    return rows
-  }, [cards, searchText, centerFilter])
+  const cards = useMemo(() => projectRows || [], [projectRows])
 
   const restrictedStages = {
-    uploadDisabled: ['enquiry', 'proposal', 'progress', 'payments'],
+    uploadDisabled: ['progress', 'payments'],
     remarksDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'payments', 'closure report'],
     paymentDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'progress', 'closure report'],
   }
@@ -744,51 +747,41 @@ function Projects() {
     <div className="rounded-3xl bg-white p-6 shadow-sm">
       <Title level={3}>Projects</Title>
 
-      <div className="mt-4 mb-6 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <Row gutter={[16, 16]}>
-          <Col xs={24} sm={12} md={8}>
-            <Input
-              placeholder="Search projects..."
-              prefix={<SearchOutlined />}
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              allowClear
-              size="large"
-            />
-          </Col>
-          <Col xs={24} sm={12} md={8}>
-            <Select
-              placeholder="Filter by Center"
-              value={centerFilter}
-              onChange={setCenterFilter}
-              size="large"
-              allowClear
-              style={{ width: '100%' }}
-            >
-              {uniqueCenters.map((center) => (
-                <Select.Option key={center} value={center}>
-                  {center}
-                </Select.Option>
-              ))}
-            </Select>
-          </Col>
-          <Col xs={24} sm={12} md={8} className="flex items-center">
-            <Button
-              onClick={() => {
-                setSearchText('')
-                setCenterFilter(null)
-              }}
-              size="large"
-              style={{ width: '100%' }}
-            >
-              Clear Filters
-            </Button>
-          </Col>
-        </Row>
+      <div className="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <Input.Search
+          placeholder="Search by project number, activity or coordinator..."
+          allowClear
+          enterButton
+          size="large"
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          onSearch={value => setSearchText(value)}
+          style={{ width: 420, maxWidth: '100%' }}
+        />
+
+        <Select
+          placeholder="Select a center"
+          allowClear
+          size="large"
+          style={{ width: 240 }}
+          options={centerOptions}
+          value={selectedCenter}
+          onChange={value => setSelectedCenter(value || undefined)}
+        />
+
+        {(searchText || selectedCenter) && (
+          <Button type="default" size="large" onClick={handleClearFilters}>
+            Clear Filters
+          </Button>
+        )}
       </div>
 
+      <Text type="secondary" className="block mb-4">
+        {filteredCards.length} {filteredCards.length === 1 ? 'project' : 'projects'} found
+      </Text>
+
       {filteredCards.length === 0 ? (
-        <Empty description="No projects available" />
+        <Empty description="No projects match the current filters" />
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 justify-center">
           {filteredCards.map((project) => (

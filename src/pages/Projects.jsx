@@ -17,6 +17,7 @@ import {
   Popconfirm,
   Form,
   DatePicker,
+  Select
 } from 'antd'
 import {
   EyeOutlined,
@@ -353,6 +354,45 @@ function Projects() {
     }
   }
 
+    const [searchText, setSearchText] = useState('')
+  const [selectedCenter, setSelectedCenter] = useState(undefined)   // “center” field in your project objects
+
+  // Extract unique centers-centers for the dropdown (you can adjust the field name if it’s different)
+  const centerOptions = useMemo(() => {
+    const centers = [...new Set(projectRows
+      .map(p => p.center?.trim())
+      .filter(Boolean))]
+
+    return centers.sort().map(c => ({ label: c, value: c }))
+  }, [projectRows])
+
+  // Filtered list (search + center)
+  const filteredCards = useMemo(() => {
+    return (projectRows || [])
+      .filter(p => p?.project_number)                     // keep only projects that have a number
+      .filter(p => {
+        // Search – checks project_number, activity and coordinator
+        const searchLower = searchText.toLowerCase().trim()
+        if (searchLower) {
+          const inNumber   = p.project_number?.toString().toLowerCase().includes(searchLower)
+          const inActivity = p.activity?.toLowerCase().includes(searchLower)
+          const inCoord    = p.project_co_ordinator?.toLowerCase().includes(searchLower)
+          if (! (inNumber || inActivity || inCoord)) return false
+        }
+
+        // Center filter
+        if (selectedCenter && p.center?.trim() !== selectedCenter) return false
+
+        return true
+      })
+  }, [projectRows, searchText, selectedCenter])
+
+  // Clear all filters
+  const handleClearFilters = () => {
+    setSearchText('')
+    setSelectedCenter(undefined)
+  }
+
   const getPaymentColumns = (stage) => [
     { title: 'Inv #', dataIndex: 'invoice_no', width: 120 },
     { title: 'Inv Date', dataIndex: 'invoice_date', width: 110 },
@@ -675,18 +715,50 @@ function Projects() {
     )
   }
 
-  const filteredCards = cards.filter(p => p?.project_number);
 
   // Projects list view
   return (
     <div className="rounded-3xl bg-white p-6 shadow-sm">
       <Title level={3}>Projects</Title>
 
+      <div className="mb-6 flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+        <Input.Search
+          placeholder="Search by project number, activity or coordinator..."
+          allowClear
+          enterButton
+          size="large"
+          value={searchText}
+          onChange={e => setSearchText(e.target.value)}
+          onSearch={value => setSearchText(value)}
+          style={{ width: 420, maxWidth: '100%' }}
+        />
+
+        <Select
+          placeholder="Filter by center"
+          allowClear
+          size="large"
+          style={{ width: 240 }}
+          options={centerOptions}
+          value={selectedCenter}
+          onChange={setSelectedCenter}
+        />
+
+        {(searchText || selectedCenter) && (
+          <Button type="default" size="large" onClick={handleClearFilters}>
+            Clear Filters
+          </Button>
+        )}
+      </div>
+
+      {/* Show count of filtered projects */}
+      <Text type="secondary" className="block mb-4">
+        {filteredCards.length} {filteredCards.length === 1 ? 'project' : 'projects'} found
+      </Text>
+
       {filteredCards.length === 0 ? (
-        <Empty description="No projects available" />
+        <Empty description="No projects match the current filters" />
       ) : (
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
-        
           {filteredCards.map((project) => (
             <Card key={safeId(project)} hoverable className="shadow-sm">
               <Space direction="vertical" size="middle" className="w-full">
@@ -696,6 +768,9 @@ function Projects() {
                 </div>
                 <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
                 <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
+                {project.center && (
+                  <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
+                )}
                 <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewProject(project)}>
                   View Details
                 </Button>
