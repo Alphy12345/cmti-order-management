@@ -43,45 +43,51 @@ function Login() {
   const [form] = Form.useForm()
   const navigate = useNavigate()
 
-  const handleSubmit = async (values) => {
-    setLoading(true)
-    try {
-      const response = await axios.post(`${API_BASE_URL}/users/login`, {
-        email: values.email,
-        password: values.password,
-      })
+const handleSubmit = async (values) => {
+  setLoading(true)
+  try {
+    const response = await axios.post(`${API_BASE_URL}/users/login`, {
+      email: values.email,
+      password: values.password,
+    })
 
-      // Show backend success message if present
-      const successMsg =
-        response?.data?.message ||
-        (response?.status === 200 ? 'Login successful' : `Status ${response.status}`)
-      message.success(successMsg)
+    console.log('Login response:', response.data)
 
-      // Save minimal user payload if available
-      if (response?.data) {
-        const { user_id, name, role } = response.data
-        const normalizedRole = (role || '').toLowerCase() === 'admin' ? 'admin' : 'gh'
-        const userPayload = { user_id, name, role: normalizedRole, email: values.email }
-        try {
-          window.localStorage.setItem('ppm_user', JSON.stringify(userPayload))
-        } catch (storageError) {
-          // non-blocking: log but don't crash UX
-          console.error('Failed to store user in localStorage', storageError)
-        }
-      }
-
-      // navigate after success based on role
-      const normalizedRole = (response?.data?.role || '').toLowerCase() === 'admin' ? 'admin' : 'gh'
-      navigate(`/${normalizedRole}/proposals`)
-    } catch (error) {
-      console.error('Login error:', error)
-      const detail = parseApiError(error)
-      // show the backend detail to user
-      message.error(detail)
-    } finally {
-      setLoading(false)
+    // Extract correct fields from actual API response
+    const userData = response.data
+    const userPayload = {
+      user_id: userData.id,        // ← it was 'id', not 'user_id'
+      name: userData.name,
+      email: userData.email || values.email,
+      role: userData.role, // normalize safely
+      center: userData.center,
+      designation: userData.designation,
+      group: userData.group,
     }
+
+    // Save to localStorage
+    try {
+      localStorage.setItem('ppm_user', JSON.stringify(userPayload))
+      console.log('User saved to localStorage:', userPayload)
+    } catch (err) {
+      console.error('Failed to save user to localStorage', err)
+    }
+
+    // Show success message
+    message.success(userData.message || 'Login successful')
+
+    // Navigate based on role
+    const routeRole = userPayload.role  // 'admin' or 'gh'
+    navigate(`/${routeRole}/proposals`)
+
+  } catch (error) {
+    console.error('Login error:', error)
+    const detail = parseApiError(error)
+    message.error(detail)
+  } finally {
+    setLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">
