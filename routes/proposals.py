@@ -14,6 +14,7 @@ from pydantic_schema.request import (
 from typing import List as ListType
 from fastapi.encoders import jsonable_encoder
 from pydantic_schema.response import ProposalResponse
+from typing import List as ListType
 
 router = APIRouter(prefix="/proposals", tags=["Proposals"])
 
@@ -321,3 +322,31 @@ def bulk_create_proposals(
         db.refresh(proposal)
     
     return created_proposals
+
+
+# ------------------------------
+# GET PROPOSALS BY CENTRE
+# ------------------------------
+@router.get("/by-centre/{centre}", response_model=List[ProposalResponse])
+def get_proposals_by_centre(centre: str, db: Session = Depends(get_db)):
+    """
+    Get all proposals for a specific centre.
+    
+    Args:
+        centre: The centre name to filter by
+        db: Database session
+        
+    Returns:
+        List of proposals for the specified centre
+    """
+    proposals = db.query(Proposal).filter(
+        func.lower(Proposal.center) == centre.lower()
+    ).all()
+
+    if not proposals:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No proposals found for centre = '{centre}'"
+        )
+
+    return proposals

@@ -46,12 +46,18 @@ def login(request: UserLogin, db: Session = Depends(get_db)):
     if user.password != request.password:
         raise HTTPException(status_code=401, detail="Incorrect password")
 
-    return {
-        "message": "Login successful",
-        "user_id": user.id,
+    # Return all user fields in the response
+    user_dict = {
+        "id": user.id,
         "name": user.name,
-        "role": user.role
+        "email": user.email,
+        "designation": user.designation,
+        "role": user.role,
+        "center": user.center,
+        "group": user.group,
+        "message": "Login successful"
     }
+    return user_dict
 
 
 # GET ALL
