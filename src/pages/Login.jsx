@@ -9,24 +9,19 @@ const { Title, Text } = Typography
 const API_BASE_URL = 'http://10.1.1.13:8000'
 
 function parseApiError(error) {
-  // Robustly extract a meaningful message from axios error
   if (!error) return 'Unknown error'
   const res = error.response
   if (!res) {
-    // network / CORS / request aborted
     return error.message || 'Network error'
   }
 
   const { status, data } = res
 
-  // Data might be a string or an object
   if (typeof data === 'string' && data.trim()) return data
   if (data) {
     if (typeof data === 'object') {
       if (data.detail) return data.detail
       if (data.message) return data.message
-      // common fastapi error shape: {"detail": "User not found"} handled above
-      // fallback: try to stringify any useful key
       if (data.errors) {
         if (Array.isArray(data.errors)) return data.errors.join(', ')
         return JSON.stringify(data.errors)
@@ -43,51 +38,61 @@ function Login() {
   const [form] = Form.useForm()
   const navigate = useNavigate()
 
-const handleSubmit = async (values) => {
-  setLoading(true)
-  try {
-    const response = await axios.post(`${API_BASE_URL}/users/login`, {
-      email: values.email,
-      password: values.password,
-    })
-
-    console.log('Login response:', response.data)
-
-    // Extract correct fields from actual API response
-    const userData = response.data
-    const userPayload = {
-      user_id: userData.id,        // ← it was 'id', not 'user_id'
-      name: userData.name,
-      email: userData.email || values.email,
-      role: userData.role, // normalize safely
-      center: userData.center,
-      designation: userData.designation,
-      group: userData.group,
-    }
-
-    // Save to localStorage
+  const handleSubmit = async (values) => {
+    setLoading(true)
     try {
-      localStorage.setItem('ppm_user', JSON.stringify(userPayload))
-      console.log('User saved to localStorage:', userPayload)
-    } catch (err) {
-      console.error('Failed to save user to localStorage', err)
+      const response = await axios.post(`${API_BASE_URL}/users/login`, {
+        email: values.email,
+        password: values.password,
+      })
+
+      console.log('Login response:', response.data)
+
+      // Extract user data and token from API response
+      const userData = response.data
+      
+      // ✅ CRITICAL FIX: Save the token!
+      const token = userData.access_token || userData.token
+      if (token) {
+        localStorage.setItem('token', token)
+        console.log('Token saved to localStorage')
+      } else {
+        console.warn('No token found in login response!')
+      }
+
+      const userPayload = {
+        user_id: userData.id,
+        name: userData.name,
+        email: userData.email || values.email,
+        role: userData.role,
+        center: userData.center,
+        designation: userData.designation,
+        group: userData.group,
+      }
+
+      // Save user to localStorage
+      try {
+        localStorage.setItem('ppm_user', JSON.stringify(userPayload))
+        console.log('User saved to localStorage:', userPayload)
+      } catch (err) {
+        console.error('Failed to save user to localStorage', err)
+      }
+
+      // Show success message
+      message.success(userData.message || 'Login successful')
+
+      // Navigate based on role
+      const routeRole = userPayload.role
+      navigate(`/${routeRole}/proposals`)
+
+    } catch (error) {
+      console.error('Login error:', error)
+      const detail = parseApiError(error)
+      message.error(detail)
+    } finally {
+      setLoading(false)
     }
-
-    // Show success message
-    message.success(userData.message || 'Login successful')
-
-    // Navigate based on role
-    const routeRole = userPayload.role  // 'admin' or 'gh'
-    navigate(`/${routeRole}/proposals`)
-
-  } catch (error) {
-    console.error('Login error:', error)
-    const detail = parseApiError(error)
-    message.error(detail)
-  } finally {
-    setLoading(false)
   }
-}
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-slate-100">

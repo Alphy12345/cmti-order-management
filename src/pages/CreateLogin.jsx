@@ -134,14 +134,14 @@ function CreateLogin() {
           <Form.Item
             name="password"
             label="Password"
-            rules={[{ required: true, message: 'Please enter password' }]}
+            rules={[
+              { required: true, message: 'Please enter password' },
+              { min: 6, message: 'Password must be at least 6 characters' },
+            ]}
+            help="Password should be at least 6 characters"
+            className="md:col-span-2"
           >
-            <>
-              <Input.Password placeholder="Enter password" />
-              <Text type="secondary" className="text-xs">
-                Password should be 6 characters
-              </Text>
-            </>
+            <Input.Password placeholder="Enter password" />
           </Form.Item>
 
           <div className="md:col-span-2 flex justify-end gap-3 mt-2">
