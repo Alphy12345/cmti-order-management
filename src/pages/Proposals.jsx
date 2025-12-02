@@ -144,6 +144,7 @@ function Proposals() {
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
+  const [projectNumberFilter, setProjectNumberFilter] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const fileInputRef = useRef(null)
@@ -326,6 +327,16 @@ function Proposals() {
       filtered = filtered.filter((item) => item.center === centerFilter)
     }
 
+    // Project number prefix filter (GSP, ISP, GAP, ILP, DPP, LSP, CLP, SO)
+    if (projectNumberFilter) {
+      const prefix = projectNumberFilter.toUpperCase()
+      filtered = filtered.filter((item) => {
+        const pn = (item.project_number || '').toString().trim().toUpperCase()
+        if (!pn) return false
+        return pn.startsWith(prefix)
+      })
+    }
+
     // Order date filter
     if (orderDateRange && orderDateRange.length === 2) {
       filtered = filtered.filter((item) => {
@@ -385,7 +396,7 @@ function Proposals() {
     }
 
     setFilteredData(filtered)
-  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, tableData])
+  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, projectNumberFilter, tableData])
 
   // Get unique centers for filter
   const uniqueCenters = useMemo(() => {
@@ -833,12 +844,29 @@ function Proposals() {
                             setOrderDateRange(null)
                             setEnquiryDateRange(null)
                             setStatusFilter(null)
+                            setProjectNumberFilter(null)
                           }}
                           size="large"
                           style={{ width: '100%' }}
                         >
                           Clear Filters
                         </Button>
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <Select
+                          placeholder="Filter by Project Number"
+                          value={projectNumberFilter}
+                          onChange={setProjectNumberFilter}
+                          size="large"
+                          allowClear
+                          style={{ width: '100%' }}
+                        >
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map((code) => (
+                            <Select.Option key={code} value={code}>
+                              {code}
+                            </Select.Option>
+                          ))}
+                        </Select>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <Select

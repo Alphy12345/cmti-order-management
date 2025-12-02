@@ -534,6 +534,17 @@ function Projects() {
                 const hideRemarks = restrictedStages.remarksDisabled.includes(stageNameLower)
                 const hidePayment = restrictedStages.paymentDisabled.includes(stageNameLower)
 
+                const defaultStageNames = [
+                  'enquiry',
+                  'proposal',
+                  'po',
+                  'po acknowledgment',
+                  'progress',
+                  'payments',
+                  'closure report',
+                ]
+                const isCustomStage = !defaultStageNames.includes(stageNameLower)
+
                 return (
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
                     <div className="flex justify-between items-center mb-5">
@@ -571,7 +582,7 @@ function Projects() {
 
                     <div className="mb-6">
                       <div className="flex justify-between items-center mb-3">
-                        {!hideRemarks && (
+                        {!hideRemarks && !isCustomStage && (
                           <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => handleOpenRemarksModal(stage)}>
                             Add Remark
                           </Button>
@@ -601,7 +612,7 @@ function Projects() {
 
                     <div>
                       <div className="flex justify-between items-center mb-3">
-                        {!hidePayment && (
+                        {!hidePayment && !isCustomStage && (
                           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
                             Add Payment
                           </Button>
