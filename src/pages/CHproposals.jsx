@@ -767,7 +767,7 @@ function Proposals() {
                         />
                       </Col>
                       {/* Clear Filters button (clears search + all filters) */}
-                      <Col xs={24} sm={12} md={2} className="flex items-center">
+                      <Col xs={24} sm={12} md={4} className="flex items-center">
                         <Button
                           onClick={() => {
                             setSearchText('')
@@ -820,6 +820,17 @@ function Proposals() {
                           style={{ width: '100%' }}
                           format="YYYY-MM-DD"
                         />
+                      </Col>
+                      <Col xs={24} sm={12} md={4} className="flex items-center justify-end">
+                        <Button
+                          type="primary"
+                          icon={<DownloadOutlined />}
+                          size="large"
+                          onClick={handleExportExcel}
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg w-full md:w-auto"
+                        >
+                          Export to Excel
+                        </Button>
                       </Col>
                     </Row>
                   </div>
