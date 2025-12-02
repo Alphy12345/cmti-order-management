@@ -626,7 +626,7 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 170,
+        width: 100,
         render: (_, record) => (
           <Space size="small">
             <Button
@@ -637,92 +637,11 @@ function Proposals() {
             >
               Edit
             </Button>
-            <Popconfirm
-              title="Confirm delete"
-              description="This action cannot be undone."
-              okText="Delete"
-              okButtonProps={{ danger: true, loading: deletingId === record.id }}
-              cancelText="Cancel"
-              onConfirm={() => handleDelete(record)}
-            >
-              <Button
-                size="small"
-                type="link"
-                danger
-                icon={<DeleteOutlined />}
-                loading={deletingId === record.id}
-              >
-                Delete
-              </Button>
-            </Popconfirm>
           </Space>
         ),
       },
     ]
-  }, [deletingId, handleDelete, openEditModal])
-
-  // Compact projects view derived from proposals (currently unused, but kept)
-  const projectRows = useMemo(
-    () =>
-      tableData
-        .filter((item) => item.project_number && item.project_number.trim() !== '')
-        .map((item) => {
-          let status = 'Pending'
-          if (
-            item.technical_completed_year &&
-            item.technical_completed_year.trim() !== '' &&
-            item.financial_completed_year &&
-            item.financial_completed_year.trim() !== ''
-          ) {
-            status = 'Financially Completed'
-          } else if (
-            item.technical_completed_year &&
-            item.technical_completed_year.trim() !== ''
-          ) {
-            status = 'Technically Completed'
-          }
-          return {
-            key: item.key,
-            project_number: item.project_number,
-            party_name: item.party_name,
-            center: item.center,
-            order_date: item.order_date,
-            technical_completed_year: item.technical_completed_year,
-            financial_completed_year: item.financial_completed_year,
-            status,
-          }
-        }),
-    [tableData],
-  )
-
-  const projectColumns = [
-    { title: 'Project Number', dataIndex: 'project_number', key: 'project_number' },
-    { title: 'Party Name', dataIndex: 'party_name', key: 'party_name' },
-    { title: 'Center', dataIndex: 'center', key: 'center' },
-    { title: 'Order Date', dataIndex: 'order_date', key: 'order_date' },
-    {
-      title: 'Technical Year',
-      dataIndex: 'technical_completed_year',
-      key: 'technical_completed_year',
-    },
-    {
-      title: 'Financial Year',
-      dataIndex: 'financial_completed_year',
-      key: 'financial_completed_year',
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (value) => {
-        let color = 'default'
-        if (value === 'Technically Completed') color = 'orange'
-        if (value === 'Financially Completed') color = 'green'
-        if (value === 'Pending') color = 'red'
-        return <Tag color={color}>{value}</Tag>
-      },
-    },
-  ]
+  }, [openEditModal])
 
   return (
     <>
@@ -903,102 +822,7 @@ function Proposals() {
                         />
                       </Col>
                     </Row>
-                    <div className="mt-4 flex justify-end gap-3">
-                      <input
-                        type="file"
-                        accept=".xlsx,.xls,.csv"
-                        ref={fileInputRef}
-                        onChange={handleImportFileChange}
-                        style={{ display: 'none' }}
-                      />
-                      <Button
-                        onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                        size="large"
-                      >
-                        Import Excel
-                      </Button>
-                      <Button
-                        type="primary"
-                        icon={<DownloadOutlined />}
-                        size="large"
-                        onClick={handleExportExcel}
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
-                      >
-                        Export to Excel
-                      </Button>
-                    </div>
                   </div>
-
-                  {importPreview && (
-                    <Modal
-                      title={
-                        importPreview
-                          ? `Import Preview – ${importPreview.rows.length} rows (${importPreview.sheetName})`
-                          : 'Import Preview'
-                      }
-                      open={importModalOpen}
-                      onCancel={() => {
-                        setImportModalOpen(false)
-                        setImportPreview(null)
-                      }}
-                      width={1100}
-                      footer={[
-                        <Button
-                          key="cancel"
-                          onClick={() => {
-                            setImportModalOpen(false)
-                            setImportPreview(null)
-                          }}
-                        >
-                          Cancel
-                        </Button>,
-                        <Button
-                          key="submit"
-                          type="primary"
-                          loading={bulkImportLoading}
-                          onClick={handleBulkImport}
-                        >
-                          Submit Import ({importPreview.rows.length} rows)
-                        </Button>,
-                      ]}
-                    >
-                      <div className="overflow-auto max-h-[60vh]">
-                        <table className="min-w-full border-collapse text-sm">
-                          <thead>
-                            <tr>
-                              {importPreview.headers.map((h, idx) => (
-                                <th
-                                  key={idx}
-                                  className="border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold"
-                                >
-                                  {h || `Column ${idx + 1}`}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {importPreview.rows.slice(0, 200).map((row, rIdx) => (
-                              <tr key={rIdx}>
-                                {importPreview.headers.map((_, cIdx) => (
-                                  <td
-                                    key={cIdx}
-                                    className="border border-slate-200 px-2 py-1"
-                                  >
-                                    {row[cIdx] ?? ''}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {importPreview.rows.length > 200 && (
-                          <p className="mt-2 text-xs text-slate-500">
-                            Showing first 200 rows of {importPreview.rows.length}.
-                          </p>
-                        )}
-                      </div>
-                    </Modal>
-                  )}
 
                   {/* Proposals Table */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1051,6 +875,18 @@ function Proposals() {
         >
           <div className="grid gap-4 md:grid-cols-2">
             {FORM_FIELDS.map((field) => {
+              const allowedEditFields = [
+                'extended_delivery_date',
+                'co_ordinator_remarks',
+                'technical_completed_year',
+                'updated_by',
+              ]
+
+              // When editing, only show the allowed edit fields
+              if (editingRecord && !allowedEditFields.includes(field.name)) {
+                return null
+              }
+
               const dateFields = [
                 'enquiry_date',
                 'quote_date',
@@ -1105,6 +941,8 @@ function Proposals() {
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
+              const shouldDisable = isUpdatedByField && !editingRecord
+
               return (
                 <Form.Item
                   key={field.name}
@@ -1123,7 +961,7 @@ function Proposals() {
                 >
                   <InputComponent
                     rows={field.input === 'textarea' ? 2 : undefined}
-                    disabled={isUpdatedByField}
+                    disabled={shouldDisable}
                   />
                 </Form.Item>
               )
