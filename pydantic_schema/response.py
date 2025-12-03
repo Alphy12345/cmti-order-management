@@ -60,22 +60,24 @@ class ProposalResponse(BaseModel):
 
     created_at: datetime
     updated_at: datetime
+    group: Optional[str] = None
+
 
     class Config:
         orm_mode = True
         populate_by_name = True
 
 
-# ---------------------------------------------------------
-# STAGE RESPONSE
-# ---------------------------------------------------------
 class StageResponse(BaseModel):
     id: int
     name: Optional[str] = None
+    position: int                # NEW
+    access: Optional[str] = None
     created_at: datetime
 
     class Config:
         orm_mode = True
+
 
 
 # ---------------------------------------------------------

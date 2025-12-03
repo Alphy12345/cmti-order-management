@@ -52,6 +52,7 @@ class ProposalBase(BaseModel):
     ppm_remarks: Optional[str] = None
     project_co_ordinator: Optional[str] = None
     updated_by: Optional[str] = None
+    group: Optional[str] = None
 
     class Config:
         allow_population_by_field_name = True
@@ -82,10 +83,13 @@ class CoordinatorUpdate(BaseModel):
 # ---------------------------------------------
 class StageBase(BaseModel):
     name: Optional[str] = None
+    position: Optional[int] = None  # NEW
+    access: Optional[str] = None      # NEW
 
 
 class StageCreate(StageBase):
-    pass
+    name: str
+    position: int
 
 
 class StageUpdate(StageBase):

@@ -14,7 +14,8 @@ from routes.progress import router as progress_router
 from routes.proposals import router as proposals_router
 from routes.stages import router as stages_router
 from routes.user import router as user_router   # new user router
-
+from routes.centres import router as centres_router
+from routes.groups import router as groups_router
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -37,3 +38,6 @@ app.include_router(progress_router)
 
 # New User router
 app.include_router(user_router)
+
+app.include_router(centres_router)
+app.include_router(groups_router)

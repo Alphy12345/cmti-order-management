@@ -59,13 +59,13 @@ def list_proposals(db: Session = Depends(get_db)) -> List[ProposalResponse]:
 def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
 
     proposals = db.query(Proposal).filter(
-        func.lower(Proposal.quotation_given_by_name) == name.lower()
+        func.lower(Proposal.project_co_ordinator) == name.lower()
     ).all()
 
     if not proposals:
         raise HTTPException(
             status_code=404,
-            detail=f"No proposals found for quotation_given_by_name = '{name}'"
+            detail=f"No proposals found for project_co_ordinator = '{name}'"
         )
 
     return proposals
