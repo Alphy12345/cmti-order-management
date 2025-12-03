@@ -88,6 +88,7 @@ const PROPOSAL_FIELDS = [
   { name: 'created_at', label: 'Created At', width: 190, inForm: false },
   { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
   { name: 'updated_by', label: 'Updated By', width: 150, required: true },
+  { name: 'group', label: 'Group', width: 150 },
 ]
 
 const FORM_FIELDS = PROPOSAL_FIELDS.filter((field) => field.inForm !== false)
