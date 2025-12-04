@@ -15,7 +15,7 @@ import dayjs from 'dayjs'
 
 const { Title } = Typography
 
-const API_BASE_URL = 'http://10.1.1.13:8000'
+const API_BASE_URL = 'http://172.18.100.160:8000'
 
 
 function Configuration({ projectRows = [] }) {

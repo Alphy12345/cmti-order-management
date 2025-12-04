@@ -6,7 +6,7 @@ import cmtiLogo from '../assets/waitro-member-cmti.png'
 
 const { Title, Text } = Typography
 
-const API_BASE_URL = 'http://10.1.1.13:8000'
+const API_BASE_URL = 'http://172.18.100.160:8000'
 
 function parseApiError(error) {
   // Robustly extract a meaningful message from axios error
@@ -147,7 +147,7 @@ function Login() {
             className="ml-2 text-blue-600 hover:text-blue-700 font-medium"
             onClick={() => navigate('/create-login')}
           >
-            Create login
+            Sign Up
           </button>
         </div>
       </Card>

@@ -67,7 +67,7 @@ const getProjectTheme = (projectNumber) => {
 }
 
 function Projects() {
-  const apiBase = 'http://10.1.1.13:8000'
+  const apiBase = 'http://172.18.100.160:8000'
   
   // Projects list state
   const [projectRows, setProjectRows] = useState([])

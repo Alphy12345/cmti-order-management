@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Modal, Button, Card, Spin, Badge, Empty, Tag, message, Collapse } from 'antd';
 import { FileTextOutlined, EyeOutlined, CalendarOutlined, UserOutlined, DollarOutlined, ProgressOutlined, DownOutlined } from '@ant-design/icons';
 
-const API_BASE_URL = 'http://10.1.1.13:8000';
+const API_BASE_URL = 'http://172.18.100.160:8000';
 
 const StageWiseView = ({ projectId, visible, onClose }) => {
   const [stageData, setStageData] = useState([]);

@@ -6,7 +6,7 @@ import cmtiLogo from '../assets/waitro-member-cmti.png'
 
 const { Title, Text } = Typography
 
-const API_BASE_URL = 'http://10.1.1.13:8000'
+const API_BASE_URL = 'http://172.18.100.160:8000'
 
 function parseApiError(error) {
   if (!error) return 'Failed to create user'
@@ -69,7 +69,7 @@ function CreateLogin() {
         <div className="flex flex-col items-center gap-4 mb-6">
           <img src={cmtiLogo} alt="CMTI logo" className="h-16 w-auto object-contain" />
           <Title level={3} className="!mb-0 text-center">
-            Create Login
+           Sign Up
           </Title>
           <Text type="secondary" className="text-center">
             Fill in the details to create a new login
@@ -149,7 +149,7 @@ function CreateLogin() {
               Back to Login
             </Button>
             <Button type="primary" htmlType="submit" loading={loading}>
-              Create Login
+            Sign Up
             </Button>
           </div>
         </Form>
