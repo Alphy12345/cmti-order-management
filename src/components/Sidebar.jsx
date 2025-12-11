@@ -37,6 +37,7 @@ function Sidebar() {
   const handleLogout = () => {
     try {
       window.localStorage.removeItem('ppm_user')
+      window.localStorage.removeItem('token')
     } catch (error) {
       console.error('Failed to clear user from localStorage', error)
     }
@@ -72,7 +73,9 @@ function Sidebar() {
           mode="inline"
           selectedKeys={[selectedKey]}
           onClick={(info) => {
-            const prefix = basePath === 'gh' ? '/gh' : '/admin'
+            // ✅ FIXED: Now handles all three roles correctly
+            const prefix = basePath === 'ch' ? '/ch' : basePath === 'gh' ? '/gh' : '/admin'
+            
             if (info.key === 'configuration') navigate(`${prefix}/configuration`)
             else if (info.key === 'projects') navigate(`${prefix}/projects`)
             else navigate(`${prefix}/proposals`)
@@ -103,5 +106,3 @@ function Sidebar() {
 }
 
 export default Sidebar
-
-

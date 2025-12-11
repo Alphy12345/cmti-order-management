@@ -7,9 +7,11 @@ import {
   Modal,
   Form,
   Input,
+  InputNumber,
   message,
   Space,
   Popconfirm,
+  Checkbox,
 } from 'antd'
 import dayjs from 'dayjs'
 
@@ -54,7 +56,10 @@ function Configuration({ projectRows = [] }) {
 
   const openStageModal = (stage = null) => {
     setEditingStage(stage)
-    stageForm.setFieldsValue({ name: stage?.name ?? '' })
+    stageForm.setFieldsValue({
+      name: stage?.name ?? '',
+      position: stage?.position ?? undefined,
+    })
     setStageModalOpen(true)
   }
 
@@ -79,7 +84,10 @@ function Configuration({ projectRows = [] }) {
           accept: 'application/json',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name: values.name }),
+        body: JSON.stringify({
+          name: values.name,
+          position: values.position,
+        }),
       })
       if (!response.ok) {
         const errorText = await response.text()
@@ -203,6 +211,23 @@ function Configuration({ projectRows = [] }) {
             rules={[{ required: true, message: 'Please enter stage name' }]}
           >
             <Input placeholder="Enter stage name" />
+          </Form.Item>
+          <Form.Item
+            name="position"
+            label="Position"
+            tooltip="Enter the stage number where this stage should appear (e.g. 6 to place it between 5 and 7)"
+            rules={[
+              {
+                type: 'number',
+                transform: (value) => (value === '' ? undefined : value),
+              },
+            ]}
+          >
+            <InputNumber
+              min={1}
+              style={{ width: '100%' }}
+              placeholder="Leave empty to add at the end"
+            />
           </Form.Item>
         </Form>
       </Modal>

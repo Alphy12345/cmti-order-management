@@ -88,6 +88,7 @@ const PROPOSAL_FIELDS = [
   { name: 'created_at', label: 'Created At', width: 190, inForm: false },
   { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
   { name: 'updated_by', label: 'Updated By', width: 150, required: true },
+  { name: 'group', label: 'Group', width: 150 },
 ]
 
 const FORM_FIELDS = PROPOSAL_FIELDS.filter((field) => field.inForm !== false)
@@ -145,6 +146,7 @@ function Proposals() {
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [projectCodePrefix, setProjectCodePrefix] = useState('')
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -388,6 +390,18 @@ function Proposals() {
       })
     }
 
+    // Project code prefix filter (first three letters of project number)
+    if (projectCodePrefix && projectCodePrefix.trim() !== '') {
+      const prefix = projectCodePrefix.trim().slice(0, 3).toLowerCase()
+      filtered = filtered.filter((item) => {
+        if (!item.project_number) return false
+        const projectPrefix = String(item.project_number)
+          .slice(0, 3)
+          .toLowerCase()
+        return projectPrefix === prefix
+      })
+    }
+
     // Status filter from cards
     if (statusFilter === 'totalProjects') {
       filtered = filtered.filter(
@@ -416,9 +430,16 @@ function Proposals() {
             item.financial_completed_year.trim() === ''),
       )
     }
-
     setFilteredData(filtered)
-  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, tableData])
+  }, [
+    searchText,
+    centerFilter,
+    orderDateRange,
+    enquiryDateRange,
+    statusFilter,
+    projectCodePrefix,
+    tableData,
+  ])
 
   // Get unique centers for filter
   const uniqueCenters = useMemo(() => {
@@ -426,6 +447,17 @@ function Proposals() {
       ...new Set(tableData.map((item) => item.center).filter(Boolean)),
     ]
     return centers.sort()
+  }, [tableData])
+
+  // Get unique project code prefixes (first three letters) for dropdown
+  const uniqueProjectPrefixes = useMemo(() => {
+    const prefixes = tableData
+      .map((item) => item.project_number)
+      .filter(Boolean)
+      .map((code) => String(code).slice(0, 3).toUpperCase())
+      .filter((code) => code.trim() !== '')
+
+    return [...new Set(prefixes)].sort()
   }, [tableData])
 
   // Export to Excel
@@ -673,8 +705,25 @@ function Proposals() {
                               />
                             </Col>
 
+                            <Col xs={24} sm={12} md={4}>
+                              <Select
+                                placeholder="Filter by Project Code (first 3 letters)"
+                                value={projectCodePrefix || undefined}
+                                onChange={(value) => setProjectCodePrefix(value || '')}
+                                allowClear
+                                size="large"
+                                style={{ width: '100%' }}
+                              >
+                                {uniqueProjectPrefixes.map((prefix) => (
+                                  <Select.Option key={prefix} value={prefix}>
+                                    {prefix}
+                                  </Select.Option>
+                                ))}
+                              </Select>
+                            </Col>
+
                             {/* Clear Filters button (clears search + all filters) */}
-                            <Col xs={24} sm={12} md={2} className="flex items-center">
+                            <Col xs={24} sm={12} md={4} className="flex items-center">
                               <Button
                                 onClick={() => {
                                   setSearchText('')
@@ -682,6 +731,7 @@ function Proposals() {
                                   setOrderDateRange(null)
                                   setEnquiryDateRange(null)
                                   setStatusFilter(null)
+                                  setProjectCodePrefix('')
                                 }}
                                 size="large"
                                 style={{ width: '100%' }}

@@ -9,24 +9,19 @@ const { Title, Text } = Typography
 const API_BASE_URL = 'http://172.18.100.160:8000'
 
 function parseApiError(error) {
-  // Robustly extract a meaningful message from axios error
   if (!error) return 'Unknown error'
   const res = error.response
   if (!res) {
-    // network / CORS / request aborted
     return error.message || 'Network error'
   }
 
   const { status, data } = res
 
-  // Data might be a string or an object
   if (typeof data === 'string' && data.trim()) return data
   if (data) {
     if (typeof data === 'object') {
       if (data.detail) return data.detail
       if (data.message) return data.message
-      // common fastapi error shape: {"detail": "User not found"} handled above
-      // fallback: try to stringify any useful key
       if (data.errors) {
         if (Array.isArray(data.errors)) return data.errors.join(', ')
         return JSON.stringify(data.errors)
@@ -51,32 +46,48 @@ function Login() {
         password: values.password,
       })
 
-      // Show backend success message if present
-      const successMsg =
-        response?.data?.message ||
-        (response?.status === 200 ? 'Login successful' : `Status ${response.status}`)
-      message.success(successMsg)
+      console.log('Login response:', response.data)
 
-      // Save minimal user payload if available
-      if (response?.data) {
-        const { user_id, name, role } = response.data
-        const normalizedRole = (role || '').toLowerCase() === 'admin' ? 'admin' : 'gh'
-        const userPayload = { user_id, name, role: normalizedRole, email: values.email }
-        try {
-          window.localStorage.setItem('ppm_user', JSON.stringify(userPayload))
-        } catch (storageError) {
-          // non-blocking: log but don't crash UX
-          console.error('Failed to store user in localStorage', storageError)
-        }
+      // Extract user data and token from API response
+      const userData = response.data
+      
+      // ✅ CRITICAL FIX: Save the token!
+      const token = userData.access_token || userData.token
+      if (token) {
+        localStorage.setItem('token', token)
+        console.log('Token saved to localStorage')
+      } else {
+        console.warn('No token found in login response!')
       }
 
-      // navigate after success based on role
-      const normalizedRole = (response?.data?.role || '').toLowerCase() === 'admin' ? 'admin' : 'gh'
-      navigate(`/${normalizedRole}/proposals`)
+      const userPayload = {
+        user_id: userData.id,
+        name: userData.name,
+        email: userData.email || values.email,
+        role: userData.role,
+        center: userData.center,
+        designation: userData.designation,
+        group: userData.group,
+      }
+
+      // Save user to localStorage
+      try {
+        localStorage.setItem('ppm_user', JSON.stringify(userPayload))
+        console.log('User saved to localStorage:', userPayload)
+      } catch (err) {
+        console.error('Failed to save user to localStorage', err)
+      }
+
+      // Show success message
+      message.success(userData.message || 'Login successful')
+
+      // Navigate based on role
+      const routeRole = userPayload.role
+      navigate(`/${routeRole}/proposals`)
+
     } catch (error) {
       console.error('Login error:', error)
       const detail = parseApiError(error)
-      // show the backend detail to user
       message.error(detail)
     } finally {
       setLoading(false)

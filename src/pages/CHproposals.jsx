@@ -43,7 +43,7 @@ const { RangePicker } = DatePicker
 const API_BASE_URL = 'http://172.18.100.160:8000'
 
 const PROPOSAL_FIELDS = [
-  { name: 'id', label: 'Sl NO', width: 120, fixed: 'left', inForm: false ,render: (_, __, index) => index + 1,},
+  { name: 'id', label: 'ID (PK)', width: 120, fixed: 'left', inForm: false },
   { name: 'enquiry_date', label: 'Enquiry Date', width: 150 },
   { name: 'customer_type', label: 'Customer Type', width: 170 },
   { name: 'address', label: 'Address', width: 240 },
@@ -89,6 +89,9 @@ const PROPOSAL_FIELDS = [
   { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
   { name: 'updated_by', label: 'Updated By', width: 150, required: true },
   { name: 'group', label: 'Group', width: 150 },
+  { name: 'party_name', label: 'Party Name', width: 200 },
+  { name: 'activity', label: 'Activity', width: 160 },
+  { name: 'key_deliverables', label: 'Key Deliverables', width: 240, input: 'textarea' },
 ]
 
 const FORM_FIELDS = PROPOSAL_FIELDS.filter((field) => field.inForm !== false)
@@ -145,33 +148,55 @@ function Proposals() {
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
-  const [projectNumberFilter, setProjectNumberFilter] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
 
-  const fetchProposals = useCallback(async () => {
-    setTableLoading(true)
-    try {
-      const response = await fetch(`${API_BASE_URL}/proposals/`, {
-        headers: { accept: 'application/json' },
-      })
-      if (!response.ok) {
-        throw new Error('Unable to fetch proposals')
-      }
-      const payload = await response.json()
-      const normalized = Array.isArray(payload) ? payload.map(mapApiToUi) : []
-      setTableData(normalized)
-      setFilteredData(normalized)
-    } catch (error) {
-      console.error(error)
-      message.error(error.message || 'Unable to fetch proposals')
-    } finally {
-      setTableLoading(false)
+ const fetchProposals = useCallback(async () => {
+  setTableLoading(true)
+
+  let center = null
+  try {
+    const rawUser = window.localStorage.getItem('ppm_user')
+    if (rawUser) {
+      const parsedUser = JSON.parse(rawUser)
+      center = parsedUser?.center?.trim().toLowerCase() || null
     }
-  }, [])
+  } catch (err) {
+    console.error('Failed to parse ppm_user from localStorage', err)
+  }
+
+  if (!center) {
+    message.error('User center not found. Please log in again.')
+    setTableLoading(false)
+    return
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/proposals/by-centre/${center}`, {
+      headers: { accept: 'application/json' },
+    })
+
+    if (!response.ok) {
+      const errorText = await response.text()
+      throw new Error(`Failed to fetch proposals for center "${center}": ${response.status} ${errorText}`)
+    }
+
+    const payload = await response.json()
+    const normalized = Array.isArray(payload) ? payload.map(mapApiToUi) : []
+    setTableData(normalized)
+    setFilteredData(normalized)
+  } catch (error) {
+    console.error('Fetch proposals error:', error)
+    message.error(error.message || 'Unable to fetch proposals for your center')
+    setTableData([])
+    setFilteredData([])
+  } finally {
+    setTableLoading(false)
+  }
+}, [])
 
   useEffect(() => {
     try {
@@ -328,16 +353,6 @@ function Proposals() {
       filtered = filtered.filter((item) => item.center === centerFilter)
     }
 
-    // Project number prefix filter (GSP, ISP, GAP, ILP, DPP, LSP, CLP, SO)
-    if (projectNumberFilter) {
-      const prefix = projectNumberFilter.toUpperCase()
-      filtered = filtered.filter((item) => {
-        const pn = (item.project_number || '').toString().trim().toUpperCase()
-        if (!pn) return false
-        return pn.startsWith(prefix)
-      })
-    }
-
     // Order date filter
     if (orderDateRange && orderDateRange.length === 2) {
       filtered = filtered.filter((item) => {
@@ -397,7 +412,7 @@ function Proposals() {
     }
 
     setFilteredData(filtered)
-  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, projectNumberFilter, tableData])
+  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, tableData])
 
   // Get unique centers for filter
   const uniqueCenters = useMemo(() => {
@@ -615,7 +630,7 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 170,
+        width: 100,
         render: (_, record) => (
           <Space size="small">
             <Button
@@ -626,92 +641,11 @@ function Proposals() {
             >
               Edit
             </Button>
-            <Popconfirm
-              title="Confirm delete"
-              description="This action cannot be undone."
-              okText="Delete"
-              okButtonProps={{ danger: true, loading: deletingId === record.id }}
-              cancelText="Cancel"
-              onConfirm={() => handleDelete(record)}
-            >
-              <Button
-                size="small"
-                type="link"
-                danger
-                icon={<DeleteOutlined />}
-                loading={deletingId === record.id}
-              >
-                Delete
-              </Button>
-            </Popconfirm>
           </Space>
         ),
       },
     ]
-  }, [deletingId, handleDelete, openEditModal])
-
-  // Compact projects view derived from proposals (currently unused, but kept)
-  const projectRows = useMemo(
-    () =>
-      tableData
-        .filter((item) => item.project_number && item.project_number.trim() !== '')
-        .map((item) => {
-          let status = 'Pending'
-          if (
-            item.technical_completed_year &&
-            item.technical_completed_year.trim() !== '' &&
-            item.financial_completed_year &&
-            item.financial_completed_year.trim() !== ''
-          ) {
-            status = 'Financially Completed'
-          } else if (
-            item.technical_completed_year &&
-            item.technical_completed_year.trim() !== ''
-          ) {
-            status = 'Technically Completed'
-          }
-          return {
-            key: item.key,
-            project_number: item.project_number,
-            party_name: item.party_name,
-            center: item.center,
-            order_date: item.order_date,
-            technical_completed_year: item.technical_completed_year,
-            financial_completed_year: item.financial_completed_year,
-            status,
-          }
-        }),
-    [tableData],
-  )
-
-  const projectColumns = [
-    { title: 'Project Number', dataIndex: 'project_number', key: 'project_number' },
-    { title: 'Party Name', dataIndex: 'party_name', key: 'party_name' },
-    { title: 'Center', dataIndex: 'center', key: 'center' },
-    { title: 'Order Date', dataIndex: 'order_date', key: 'order_date' },
-    {
-      title: 'Technical Year',
-      dataIndex: 'technical_completed_year',
-      key: 'technical_completed_year',
-    },
-    {
-      title: 'Financial Year',
-      dataIndex: 'financial_completed_year',
-      key: 'financial_completed_year',
-    },
-    {
-      title: 'Status',
-      dataIndex: 'status',
-      key: 'status',
-      render: (value) => {
-        let color = 'default'
-        if (value === 'Technically Completed') color = 'orange'
-        if (value === 'Financially Completed') color = 'green'
-        if (value === 'Pending') color = 'red'
-        return <Tag color={color}>{value}</Tag>
-      },
-    },
-  ]
+  }, [openEditModal])
 
   return (
     <>
@@ -805,7 +739,7 @@ function Proposals() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Ongoing Projects
+                            Pending Projects
                           </span>
                         }
                         value={statistics.pendingProjects}
@@ -837,7 +771,7 @@ function Proposals() {
                         />
                       </Col>
                       {/* Clear Filters button (clears search + all filters) */}
-                      <Col xs={24} sm={12} md={2} className="flex items-center">
+                      <Col xs={24} sm={12} md={4} className="flex items-center">
                         <Button
                           onClick={() => {
                             setSearchText('')
@@ -845,29 +779,12 @@ function Proposals() {
                             setOrderDateRange(null)
                             setEnquiryDateRange(null)
                             setStatusFilter(null)
-                            setProjectNumberFilter(null)
                           }}
                           size="large"
                           style={{ width: '100%' }}
                         >
                           Clear Filters
                         </Button>
-                      </Col>
-                      <Col xs={24} sm={12} md={6}>
-                        <Select
-                          placeholder="Filter by Project Number"
-                          value={projectNumberFilter}
-                          onChange={setProjectNumberFilter}
-                          size="large"
-                          allowClear
-                          style={{ width: '100%' }}
-                        >
-                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map((code) => (
-                            <Select.Option key={code} value={code}>
-                              {code}
-                            </Select.Option>
-                          ))}
-                        </Select>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <Select
@@ -908,103 +825,19 @@ function Proposals() {
                           format="YYYY-MM-DD"
                         />
                       </Col>
-                    </Row>
-                    <div className="mt-4 flex justify-end gap-3">
-                      <input
-                        type="file"
-                        accept=".xlsx,.xls,.csv"
-                        ref={fileInputRef}
-                        onChange={handleImportFileChange}
-                        style={{ display: 'none' }}
-                      />
-                      <Button
-                        onClick={() => fileInputRef.current && fileInputRef.current.click()}
-                        size="large"
-                      >
-                        Import Excel
-                      </Button>
-                      <Button
-                        type="primary"
-                        icon={<DownloadOutlined />}
-                        size="large"
-                        onClick={handleExportExcel}
-                        className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg"
-                      >
-                        Export to Excel
-                      </Button>
-                    </div>
-                  </div>
-
-                  {importPreview && (
-                    <Modal
-                      title={
-                        importPreview
-                          ? `Import Preview – ${importPreview.rows.length} rows (${importPreview.sheetName})`
-                          : 'Import Preview'
-                      }
-                      open={importModalOpen}
-                      onCancel={() => {
-                        setImportModalOpen(false)
-                        setImportPreview(null)
-                      }}
-                      width={1100}
-                      footer={[
+                      <Col xs={24} sm={12} md={4} className="flex items-center justify-end">
                         <Button
-                          key="cancel"
-                          onClick={() => {
-                            setImportModalOpen(false)
-                            setImportPreview(null)
-                          }}
-                        >
-                          Cancel
-                        </Button>,
-                        <Button
-                          key="submit"
                           type="primary"
-                          loading={bulkImportLoading}
-                          onClick={handleBulkImport}
+                          icon={<DownloadOutlined />}
+                          size="large"
+                          onClick={handleExportExcel}
+                          className="bg-gradient-to-r from-blue-500 to-blue-600 border-none shadow-md hover:shadow-lg w-full md:w-auto"
                         >
-                          Submit Import ({importPreview.rows.length} rows)
-                        </Button>,
-                      ]}
-                    >
-                      <div className="overflow-auto max-h-[60vh]">
-                        <table className="min-w-full border-collapse text-sm">
-                          <thead>
-                            <tr>
-                              {importPreview.headers.map((h, idx) => (
-                                <th
-                                  key={idx}
-                                  className="border border-slate-200 bg-slate-50 px-2 py-1 text-left font-semibold"
-                                >
-                                  {h || `Column ${idx + 1}`}
-                                </th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {importPreview.rows.slice(0, 200).map((row, rIdx) => (
-                              <tr key={rIdx}>
-                                {importPreview.headers.map((_, cIdx) => (
-                                  <td
-                                    key={cIdx}
-                                    className="border border-slate-200 px-2 py-1"
-                                  >
-                                    {row[cIdx] ?? ''}
-                                  </td>
-                                ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {importPreview.rows.length > 200 && (
-                          <p className="mt-2 text-xs text-slate-500">
-                            Showing first 200 rows of {importPreview.rows.length}.
-                          </p>
-                        )}
-                      </div>
-                    </Modal>
-                  )}
+                          Export to Excel
+                        </Button>
+                      </Col>
+                    </Row>
+                  </div>
 
                   {/* Proposals Table */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1057,6 +890,18 @@ function Proposals() {
         >
           <div className="grid gap-4 md:grid-cols-2">
             {FORM_FIELDS.map((field) => {
+              const allowedEditFields = [
+                'extended_delivery_date',
+                'co_ordinator_remarks',
+                'technical_completed_year',
+                'updated_by',
+              ]
+
+              // When editing, only show the allowed edit fields
+              if (editingRecord && !allowedEditFields.includes(field.name)) {
+                return null
+              }
+
               const dateFields = [
                 'enquiry_date',
                 'quote_date',
@@ -1111,6 +956,8 @@ function Proposals() {
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
+              const shouldDisable = isUpdatedByField && !editingRecord
+
               return (
                 <Form.Item
                   key={field.name}
@@ -1129,7 +976,7 @@ function Proposals() {
                 >
                   <InputComponent
                     rows={field.input === 'textarea' ? 2 : undefined}
-                    disabled={isUpdatedByField}
+                    disabled={shouldDisable}
                   />
                 </Form.Item>
               )

@@ -120,24 +120,56 @@ function Projects() {
     fetchProjects()
   }, [])
 
-  const fetchProjects = async () => {
-    setLoading(true)
-    try {
-      const res = await fetch(`${apiBase}/proposals/`)
-      if (!res.ok) {
-        throw new Error(`Failed to fetch projects: ${res.status}`)
+const fetchProjects = async () => {
+  setLoading(true)
+
+  // Get the center from logged-in user (lowercase to match API expectation)
+  let userCenter = ''
+  try {
+    const rawUser = window.localStorage.getItem('ppm_user')
+    if (rawUser) {
+      const parsedUser = JSON.parse(rawUser)
+      if (parsedUser && parsedUser.center) {
+        userCenter = parsedUser.center.trim().toLowerCase() // e.g., "smpm"
       }
-      const data = await res.json()
-      console.log('Fetched projects:', data)
-      setProjectRows(Array.isArray(data) ? data : [])
-    } catch (error) {
-      console.error('Error fetching projects:', error)
-      message.error('Failed to load projects')
-      setProjectRows([])
-    } finally {
-      setLoading(false)
     }
+  } catch (error) {
+    console.error('Failed to read user center from localStorage', error)
   }
+
+  // Fallback if no center found
+  if (!userCenter) {
+    message.error('User center not found. Please log in again.')
+    setLoading(false)
+    setProjectRows([])
+    return
+  }
+
+  try {
+    const res = await fetch(`${apiBase}/proposals/by-centre/${userCenter}`, {
+      headers: {
+        'accept': 'application/json'
+      }
+    })
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => 'Unknown error')
+      throw new Error(`Failed to fetch projects: ${res.status} - ${errText}`)
+    }
+
+    const data = await res.json()
+    console.log('Fetched projects for center:', userCenter, data)
+
+    // Ensure it's always an array
+    setProjectRows(Array.isArray(data) ? data : [])
+  } catch (error) {
+    console.error('Error fetching projects:', error)
+    message.error('Failed to load projects')
+    setProjectRows([])
+  } finally {
+    setLoading(false)
+  }
+}
 
   const cards = useMemo(() => projectRows || [], [projectRows])
 
@@ -534,17 +566,6 @@ function Projects() {
                 const hideRemarks = restrictedStages.remarksDisabled.includes(stageNameLower)
                 const hidePayment = restrictedStages.paymentDisabled.includes(stageNameLower)
 
-                const defaultStageNames = [
-                  'enquiry',
-                  'proposal',
-                  'po',
-                  'po acknowledgment',
-                  'progress',
-                  'payments',
-                  'closure report',
-                ]
-                const isCustomStage = !defaultStageNames.includes(stageNameLower)
-
                 return (
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
                     <div className="flex justify-between items-center mb-5">
@@ -582,7 +603,7 @@ function Projects() {
 
                     <div className="mb-6">
                       <div className="flex justify-between items-center mb-3">
-                        {!hideRemarks && !isCustomStage && (
+                        {!hideRemarks && (
                           <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => handleOpenRemarksModal(stage)}>
                             Add Remark
                           </Button>
@@ -612,7 +633,7 @@ function Projects() {
 
                     <div>
                       <div className="flex justify-between items-center mb-3">
-                        {!hidePayment && !isCustomStage && (
+                        {!hidePayment && (
                           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
                             Add Payment
                           </Button>
