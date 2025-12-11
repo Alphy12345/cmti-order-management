@@ -181,3 +181,26 @@ class Group(Base):
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     centre = relationship("Centre", back_populates="groups")
+
+
+# -------------------------------------------------
+# MASTER PROPOSAL TABLE
+# -------------------------------------------------
+class MasterProposal(Base):
+    __tablename__ = "master_proposals"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    quote_date = Column(String, nullable=True)
+    customer_name = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    quote_amt = Column(String, nullable=True)
+    reference = Column(String, nullable=True)
+    quotation_ref = Column(String, nullable=True)
+    indentor = Column(String, nullable=True)
+    department = Column(String, nullable=True)
+    contact_details = Column(String, nullable=True)
+    order_number = Column(String, nullable=True)
+    date = Column(String, nullable=True)
+    amount = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)

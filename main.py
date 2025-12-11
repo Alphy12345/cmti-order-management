@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from starlette.middleware.cors import CORSMiddleware
-
+from routes import masterproposals 
 from db import Base, engine
 
 # ✅ IMPORT ALL MODELS SO SQLALCHEMY CAN CREATE TABLES
@@ -16,6 +16,7 @@ from routes.stages import router as stages_router
 from routes.user import router as user_router   # new user router
 from routes.centres import router as centres_router
 from routes.groups import router as groups_router
+from routes.masterproposals import router as master_proposals_router
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
@@ -41,3 +42,4 @@ app.include_router(user_router)
 
 app.include_router(centres_router)
 app.include_router(groups_router)
+app.include_router(master_proposals_router)
