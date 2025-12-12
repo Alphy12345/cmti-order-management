@@ -83,9 +83,11 @@ function Projects() {
   const [loading, setLoading] = useState(true)
   
   const [currentUserName, setCurrentUserName] = useState('')
+  const [stageConfig, setStageConfig] = useState([])
   
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
+  
   const [loadingStages, setLoadingStages] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
 
@@ -116,6 +118,7 @@ function Projects() {
   // Fetch projects on mount
   useEffect(() => {
     fetchProjects()
+    fetchStageConfig()
   }, [])
 
   const fetchProjects = async () => {
@@ -194,10 +197,47 @@ function Projects() {
 
   const cards = useMemo(() => projectRows || [], [projectRows])
 
-  const restrictedStages = {
-    uploadDisabled: ['progress', 'payments'],
-    remarksDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'payments', 'closure report'],
-    paymentDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'progress', 'closure report'],
+  const fetchStageConfig = async () => {
+    try {
+      const res = await fetch(`${apiBase}/stages/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch stage configuration')
+      }
+      const data = await res.json()
+      const normalized = Array.isArray(data)
+        ? data.map((item) => ({ ...item, key: item.id }))
+        : []
+      setStageConfig(normalized)
+      return normalized
+    } catch (error) {
+      console.error('Error fetching stage configuration:', error)
+      return []
+    }
+  }
+
+  const getStageAccessList = (stage) => {
+    if (!stage) return []
+    let config = null
+    if (Array.isArray(stageConfig)) {
+      config = stageConfig.find((s) => s.id === stage.stage_id)
+      if (!config) {
+        const name = (stage.stage_name || '').trim().toLowerCase()
+        if (name) {
+          config = stageConfig.find(
+            (s) => (s.name || '').trim().toLowerCase() === name
+          )
+        }
+      }
+    }
+
+    const raw = config?.access
+    if (!raw || typeof raw !== 'string') return []
+    return raw
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
   }
 
   const fetchStageData = async (projectId) => {
@@ -548,10 +588,10 @@ function Projects() {
                 const hasDocs = Array.isArray(stage.documents) && stage.documents.length > 0
                 const hasProg = Array.isArray(stage.progress) && stage.progress.length > 0
                 const hasPay = Array.isArray(stage.payments) && stage.payments.length > 0
-
-                const hideUpload = restrictedStages.uploadDisabled.includes(stageNameLower)
-                const hideRemarks = restrictedStages.remarksDisabled.includes(stageNameLower)
-                const hidePayment = restrictedStages.paymentDisabled.includes(stageNameLower)
+                const accessList = getStageAccessList(stage)
+                const canUpload = accessList.includes('upload')
+                const canAddRemarks = accessList.includes('add remarks')
+                const canAddPayments = accessList.includes('add payments')
 
                 return (
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
@@ -559,7 +599,7 @@ function Projects() {
                       <Title level={4} className="!mb-0">
                         <Tag color="blue">{stage.stage_id}</Tag> {stageName || 'Stage'}
                       </Title>
-                      {!hideUpload && (
+                      {canUpload && (
                         <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
                           Upload
                         </Button>
@@ -590,7 +630,7 @@ function Projects() {
 
                     <div className="mb-6">
                       <div className="flex justify-between items-center mb-3">
-                        {!hideRemarks && (
+                        {canAddRemarks && (
                           <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => handleOpenRemarksModal(stage)}>
                             Add Remark
                           </Button>
@@ -620,7 +660,7 @@ function Projects() {
 
                     <div>
                       <div className="flex justify-between items-center mb-3">
-                        {!hidePayment && (
+                        {canAddPayments && (
                           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
                             Add Payment
                           </Button>

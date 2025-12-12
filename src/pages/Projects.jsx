@@ -80,6 +80,10 @@ function Projects() {
   const [stageData, setStageData] = useState([])
   const [loadingStages, setLoadingStages] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
+  const [allotmentModalVisible, setAllotmentModalVisible] = useState(false)
+  const [selectedStageForAllotment, setSelectedStageForAllotment] = useState(null)
+  const [allotmentData, setAllotmentData] = useState(null)
+  const [loadingAllotment, setLoadingAllotment] = useState(false)
 
   // Upload
   const [uploadModalVisible, setUploadModalVisible] = useState(false)
@@ -240,6 +244,228 @@ function Projects() {
   const handleBackToProjects = () => {
     setSelectedProject(null)
     setStageData([])
+  }
+
+  const handleOpenAllotmentModal = (stage) => {
+    const projectId = Number(safeId(selectedProject))
+    if (!projectId) {
+      message.error('Project ID not found')
+      return
+    }
+
+    setSelectedStageForAllotment(stage)
+    setAllotmentModalVisible(true)
+    setLoadingAllotment(true)
+    setAllotmentData(null)
+
+    fetch(`${apiBase}/proposals/payments/${projectId}`, {
+      headers: { accept: 'application/json' },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errText = await res.text().catch(() => 'Failed to load allotment sheet')
+          throw new Error(errText || 'Failed to load allotment sheet')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setAllotmentData(data)
+      })
+      .catch((err) => {
+        console.error('Allotment sheet fetch error:', err)
+        message.error(err.message || 'Failed to load allotment sheet')
+      })
+      .finally(() => {
+        setLoadingAllotment(false)
+      })
+  }
+
+  const handleCloseAllotmentModal = () => {
+    setAllotmentModalVisible(false)
+    setSelectedStageForAllotment(null)
+    setAllotmentData(null)
+    setLoadingAllotment(false)
+  }
+
+  const handleDownloadAllotment = async (format) => {
+    const projectId = Number(safeId(selectedProject))
+    if (!projectId) {
+      message.error('Project ID not found')
+      return
+    }
+
+    const normalizedFormat = (format || '').toLowerCase() === 'pdf' ? 'pdf' : 'word'
+
+    try {
+      const res = await fetch(`${apiBase}/proposals/payments/${projectId}`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch allotment data')
+      }
+      const data = await res.json()
+
+      const paymentsRows = Array.isArray(data?.payments) ? data.payments : []
+
+      const html = `<!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="UTF-8" />
+      <title>Allotment Sheet</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #000; padding: 32px; }
+        h2 { text-align: center; margin-bottom: 32px; }
+        .label { font-weight: 600; margin-right: 8px; }
+        .block { margin-bottom: 6px; }
+
+        table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+        th, td { border: 1px solid #000; padding: 4px; font-size: 12px; }
+        .copy-to { margin-top: 32px; font-size: 12px; }
+        .header-table { width: 100%; border: none; margin-bottom: 8px; }
+        .header-table td { border: none; padding: 0; }
+        .header-left { text-align: left; }
+        .header-right { text-align: right; }
+        .copy-to-table { width: 100%; border: none; margin-top: 8px; text-align: center; }
+        .copy-to-table td { border: none; padding-top: 4px; }
+      </style>
+    </head>
+    <body>
+      <div>
+        <h2>PP &amp; BD DEPT</h2>
+
+        <table class="header-table">
+          <tr>
+            <td class="header-left">
+              <span class="label">Released to C -</span>
+              <span class="label">${data?.center || ''}</span>
+            </td>
+            <td class="header-right">
+              <span class="label">Date:</span>
+              <span class="label">${data?.order_date || ''}</span>
+            </td>
+          </tr>
+        </table>
+
+        <div class="block">
+          <span class="label">${data?.activity || 'Project Name'}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Customer:</span>
+          <span>${(data?.party_name || '') + (data?.address ? ', ' + data.address : '')}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Contact Person:</span>
+          <span>${data?.email || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Co-ordinator:</span>
+          <span>${data?.project_co_ordinator || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Email &amp; Contact details:</span>
+          <span></span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Number:</span>
+          <span class="label">${data?.project_number || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Name:</span>
+          <span class="label">${data?.activity || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Order Value:</span>
+          <span>${data?.order_value || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Purchase order No:</span>
+          <span>${data?.order_number || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Delivery date:</span>
+          <span>${data?.delivery_date || ''}</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Full / Stage Payment</th>
+              <th>Invoice No and Amount</th>
+              <th>Invoice Date</th>
+              <th>Payment Received</th>
+              <th>Payment Received Date</th>
+              <th>Balance amount and remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${paymentsRows.length > 0
+              ? paymentsRows.map((row) => `
+                <tr>
+                  <td></td>
+                  <td>${row.invoice_no || ''}</td>
+                  <td>${row.invoice_date || ''}</td>
+                  <td>${row.amount_recieved || ''}</td>
+                  <td>${row.recieved_date || ''}</td>
+                  <td>${row.bal || ''}</td>
+                </tr>`).join('')
+              : `
+                <tr>
+                  <td colspan="6" style="text-align:center;color:#666;">No payment records available</td>
+                </tr>
+              `}
+          </tbody>
+        </table>
+
+        <div class="copy-to">
+          <div class="block">Copy to:</div>
+          <table class="copy-to-table">
+            <tr>
+              <td>GH (P&S)</td>
+              <td>Sr. CAO</td>
+              <td>GH (C-${data?.center || ''})</td>
+              <td>CH (C-${data?.center || ''})</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px; text-align: right; font-weight: 600;">CH (PP&amp;BD)</div>
+        <div style="margin-top: 16px; font-weight: 600; font-size: 12px;">Director: For kind information</div>
+      </div>
+    </body>
+  </html>`
+      if (normalizedFormat === 'word') {
+        const blob = new Blob([html], { type: 'application/msword' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `allotment-${projectId}.doc`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } else {
+        const win = window.open('', '_blank')
+        if (!win) {
+          message.error('Popup blocked. Please allow popups to download the PDF.')
+          return
+        }
+        win.document.open()
+        win.document.write(html + '<script>window.print();</script>')
+        win.document.close()
+      }
+    } catch (err) {
+      console.error('Allotment download error:', err)
+      message.error(err.message || 'Failed to download allotment sheet')
+    }
   }
 
   // Upload Document handlers
@@ -557,6 +783,11 @@ function Projects() {
 
   // Project details view
   if (selectedProject) {
+    const getAllotmentPaymentRow = (index) => {
+      if (!allotmentData || !Array.isArray(allotmentData.payments)) return {}
+      return allotmentData.payments[index] || {}
+    }
+
     return (
       <div className="rounded-3xl bg-white p-6 shadow-sm">
         <div className="mb-6 flex items-center justify-between">
@@ -598,6 +829,7 @@ function Projects() {
                 const canUpload = accessList.includes('upload')
                 const canAddRemarks = accessList.includes('add remarks')
                 const canAddPayments = accessList.includes('add payments')
+                const canViewAllotment = accessList.includes('view allotment sheet')
 
                 return (
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
@@ -631,6 +863,38 @@ function Projects() {
                             </Card>
                           ))}
                         </div>
+                      </div>
+                    )}
+
+                    {canViewAllotment && (
+                      <div className="mb-6">
+                        <Card size="small" className="border-l-4 border-l-indigo-600">
+                          <div className="flex items-center justify-between">
+                            <Text strong>Allotment Sheet</Text>
+                            <Space>
+                              <Button
+                                size="small"
+                                type="primary"
+                                icon={<EyeOutlined />}
+                                onClick={() => handleOpenAllotmentModal(stage)}
+                              >
+                                View
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => handleDownloadAllotment('word')}
+                              >
+                                Download as Word
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => handleDownloadAllotment('pdf')}
+                              >
+                                Download as PDF
+                              </Button>
+                            </Space>
+                          </div>
+                        </Card>
                       </div>
                     )}
 
@@ -811,10 +1075,165 @@ function Projects() {
         >
           <iframe src={viewDocumentUrl} className="w-full h-[80vh]" title="Document" />
         </Modal>
+
+        <Modal
+          title={`Allotment Sheet - ${selectedStageForAllotment?.stage_name || ''}`}
+          open={allotmentModalVisible}
+          onCancel={handleCloseAllotmentModal}
+          footer={null}
+          width={900}
+        >
+          <div className="bg-white text-black p-8 max-h-[80vh] overflow-auto">
+            <div className="text-center mb-8">
+              <h2 className="text-xl font-semibold">PP &amp; BD DEPT</h2>
+            </div>
+
+            {loadingAllotment && (
+              <div className="py-10 text-center text-slate-500">Loading allotment sheet...</div>
+            )}
+
+            {!loadingAllotment && (
+              <>
+
+                <div className="flex justify-between mb-2">
+                  <div>
+                    <span className="mr-2 font-semibold">Released to C -</span>
+                    <span className="mr-2 font-semibold">
+                      {allotmentData?.center || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="mr-2 font-semibold">Date:</span>
+                    <span className="mr-2 font-semibold">
+                      {allotmentData?.order_date || ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-1">
+                  <div className=" inline-block px-4 py-1 font-semibold">
+                    {allotmentData?.activity || 'Project Name'}
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-8 text-sm">
+                  <div>
+                    <span className="font-semibold mr-2">Customer:</span>
+                    <span className="inline-block min-w-[300px] align-middle">
+                      {`${allotmentData?.party_name || ''}${
+                        allotmentData?.address ? ', ' + allotmentData.address : ''
+                      }`}
+                    </span>
+                  </div>
+
+
+                  <div>
+                    <span className="font-semibold mr-2">Contact Person:</span>
+                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email ||''} </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Co-ordinator:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.project_co_ordinator || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Email &amp; Contact details:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Number:</span>
+                    <span className="inline-block min-w-[300px] font-semibold align-middle">
+                      {allotmentData?.project_number || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Name:</span>
+                    <span className="inline-block min-w-[300px] font-semibold  align-middle">
+                      {allotmentData?.activity || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Order Value:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.order_value || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Purchase order No:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.order_number || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Delivery date:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.delivery_date || ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <table className="w-full border border-black text-xs">
+                    <thead>
+                      <tr>
+                        <th className="border border-black px-2 py-1 text-left">Full / Stage Payment</th>
+                        <th className="border border-black px-2 py-1 text-left">Invoice No and Amount</th>
+                        <th className="border border-black px-2 py-1 text-left">Invoice Date</th>
+                        <th className="border border-black px-2 py-1 text-left">Payment Received</th>
+                        <th className="border border-black px-2 py-1 text-left">Payment Received Date</th>
+                        <th className="border border-black px-2 py-1 text-left">Balance amount and remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allotmentData?.payments && Array.isArray(allotmentData.payments) && allotmentData.payments.length > 0 ? (
+                        allotmentData.payments.map((row, idx) => (
+                          <tr key={row.id || idx}>
+                            <td className="border border-black px-2 py-1"></td>
+                            <td className="border border-black px-2 py-1">{row.invoice_no || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.invoice_date || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.amount_recieved || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.recieved_date || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.bal || ''}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="border border-black px-2 py-1 text-center text-gray-500">
+                            No payment records available
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-between items-start text-sm mt-8">
+                  <div>
+                    <div className="font-semibold mb-6">Copy to:</div>
+                    <div className="inline-flex [column-gap:8.5rem]">
+                      <span style={{marginLeft:'10px'}}>GH (P&S)</span>
+                      <span>Sr. CAO</span>
+                      <span>GH (C-{allotmentData?.center || ''})</span>
+                      <span>CH (C-{allotmentData?.center || ''})</span>
+                    </div>
+
+                  </div>
+                  <div className="text-right font-semibold">CH (PP&amp;BD)</div>
+                </div>
+                <div className="mt-4 font-semibold">Director: For kind information</div>
+
+
+              </>
+            )}
+          </div>
+        </Modal>
+
       </div>
     )
   }
-
 
   // Projects list view
   return (
