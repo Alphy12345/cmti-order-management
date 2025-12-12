@@ -11,6 +11,8 @@ from services.minio_client import (
     extract_object_name_from_url,
     upload_file_to_minio,
 )
+from services.notification import create_notification
+
 
 router = APIRouter(prefix="/documents", tags=["Documents"])
 
@@ -63,6 +65,14 @@ async def create_document(
     db.add(document)
     db.commit()
     db.refresh(document)
+
+    create_notification(
+        db=db,
+        user_name=uploaded_by,
+        message=f"Document uploaded: {document.name}",
+        proposal_id=project_id,
+        document_id=document.id
+    )
 
     # -------------------------------------------------------------
     # UPDATE PROPOSAL.CLOSER_REPORT = "Yes" ONLY IF stage == "Closure Report"
@@ -177,6 +187,14 @@ async def update_document(
 
     db.commit()
     db.refresh(doc)
+
+    create_notification(
+        db=db,
+        user_name=uploaded_by,
+        message=f"Document updated: {doc.name}",
+        proposal_id=doc.project_id,
+        document_id=doc.id
+    )
 
     stage_docs = db.query(Document).filter(Document.stage_id == doc.stage_id).first()
     closure_report = "Uploaded" if stage_docs else "Not Uploaded"

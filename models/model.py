@@ -181,3 +181,18 @@ class Group(Base):
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     centre = relationship("Centre", back_populates="groups")
+
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    user_name = Column(String, nullable=False)  # admin OR project-coordinator
+    message = Column(String, nullable=False)
+    is_read = Column(Integer, default=0)  # 0 = unread, 1 = read
+    related_proposal_id = Column(Integer, ForeignKey("proposals.id", ondelete="CASCADE"), nullable=True)
+    related_document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True)
+
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+

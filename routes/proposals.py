@@ -15,6 +15,7 @@ from typing import List as ListType
 from fastapi.encoders import jsonable_encoder
 from pydantic_schema.response import ProposalResponse
 from typing import List as ListType
+from services.notification import create_notification
 
 router = APIRouter(prefix="/proposals", tags=["Proposals"])
 
@@ -41,6 +42,14 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
     db.add(proposal)
     db.commit()
     db.refresh(proposal)
+
+    create_notification(
+    db=db,
+    user_name="admin",
+    message=f"New proposal created: ID {proposal.id}",
+    proposal_id=proposal.id
+)
+
     return proposal
 
 
@@ -111,6 +120,13 @@ def update_proposal(
 
     db.commit()
     db.refresh(proposal)
+
+    create_notification(
+    db=db,
+    user_name="admin",
+    message=f"Proposal ID {proposal.id} updated",
+    proposal_id=proposal.id
+)
     return proposal
 
 
@@ -170,6 +186,13 @@ def coordinator_update(payload: CoordinatorUpdate, db: Session = Depends(get_db)
 
     db.commit()
     db.refresh(proposal)
+
+    create_notification(
+    db=db,
+    user_name=payload.updated_by,
+    message=f"Coordinator updated proposal ID {proposal.id}",
+    proposal_id=proposal.id
+)
 
     return {
         "message": "Coordinator details updated successfully",
