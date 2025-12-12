@@ -3,6 +3,7 @@ import {
   ProfileOutlined,
   SettingOutlined,
   ProjectOutlined,
+  BarChartOutlined,
 } from '@ant-design/icons'
 import cmtiLogo from '../assets/waitro-member-cmti.png'
 import { useLocation, useNavigate } from 'react-router-dom'
@@ -19,7 +20,13 @@ function Sidebar() {
   const section = segments[1] || 'proposals'
 
   const selectedKey =
-    section === 'configuration' ? 'configuration' : section === 'projects' ? 'projects' : 'proposals'
+    section === 'configuration'
+      ? 'configuration'
+      : section === 'projects'
+      ? 'projects'
+      : section === 'analytics'
+      ? 'analytics'
+      : 'proposals'
 
   let userName = ''
   try {
@@ -72,16 +79,17 @@ function Sidebar() {
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
-          onClick={(info) => {
-            // ✅ FIXED: Now handles all three roles correctly
+            onClick={(info) => {
             const prefix = basePath === 'ch' ? '/ch' : basePath === 'gh' ? '/gh' : '/admin'
-            
+
             if (info.key === 'configuration') navigate(`${prefix}/configuration`)
             else if (info.key === 'projects') navigate(`${prefix}/projects`)
+            else if (info.key === 'analytics') navigate(`${prefix}/analytics`)
             else navigate(`${prefix}/proposals`)
           }}
           items={[
-            { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals' },
+            { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals / Projects' },
+            { key: 'analytics', icon: <BarChartOutlined />, label: 'Analytics' },
             ...(basePath === 'admin'
               ? [
                   {
@@ -91,7 +99,7 @@ function Sidebar() {
                   },
                 ]
               : []),
-            { key: 'projects', icon: <ProjectOutlined />, label: 'Projects' },
+            { key: 'projects', icon: <ProjectOutlined />, label: 'Project Documents' },
           ]}
           className="text-base"
         />

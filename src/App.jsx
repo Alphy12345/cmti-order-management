@@ -1,6 +1,7 @@
 import { Layout } from 'antd'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Proposals from './pages/Proposals'
+import Analytics from './pages/Analytics'
 import Configuration from './pages/Configuration'
 import Projects from './pages/Projects'
 import GHProposals from './pages/GHproposals'
@@ -84,6 +85,7 @@ function RoleProtectedLayout({ basePath }) {
         >
           <Routes>
             <Route path="proposals" element={<ProposalsComponent />} />
+            <Route path="analytics" element={<Analytics />} />
             <Route path="projects" element={<ProjectsComponent />} />
 
             {/* Only admins can access configuration */}
