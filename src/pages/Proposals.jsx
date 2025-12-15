@@ -43,7 +43,7 @@ const { RangePicker } = DatePicker
 const API_BASE_URL = 'http://172.18.100.160:8000'
 
 const PROPOSAL_FIELDS = [
-  { name: 'id', label: 'Sl NO', width: 120, fixed: 'left', inForm: false ,render: (_, __, index) => index + 1,},
+  { name: 'id', label: 'ID (PK)', width: 120, fixed: 'left', inForm: false },
   { name: 'enquiry_date', label: 'Enquiry Date', width: 150 },
   { name: 'customer_type', label: 'Customer Type', width: 170 },
   { name: 'address', label: 'Address', width: 240 },
@@ -151,6 +151,8 @@ function Proposals() {
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [proposalCount, setProposalCount] = useState(0)
+
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -173,6 +175,25 @@ function Proposals() {
     }
   }, [])
 
+  const fetchProposalCount = useCallback(async () => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/master_proposals/count`, {
+      headers: { accept: 'application/json' },
+    })
+
+    if (!response.ok) {
+      throw new Error('Unable to fetch proposal count')
+    }
+
+    const payload = await response.json()   // { count: 742 }
+    setProposalCount(payload.count)
+  } catch (error) {
+    console.error(error)
+    message.error(error.message || 'Unable to fetch proposal count')
+  }
+}, [])
+
+
   useEffect(() => {
     try {
       const rawUser = window.localStorage.getItem('ppm_user')
@@ -187,7 +208,8 @@ function Proposals() {
     }
 
     fetchProposals()
-  }, [fetchProposals])
+    fetchProposalCount()
+  }, [fetchProposals , fetchProposalCount])
 
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
@@ -728,7 +750,6 @@ function Proposals() {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter(null)}
                     >
                       <Statistic
                         title={
@@ -736,7 +757,7 @@ function Proposals() {
                             Total Proposals
                           </span>
                         }
-                        value={statistics.totalProposals}
+                        value={proposalCount}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -886,6 +907,7 @@ function Proposals() {
                         </Select>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
+                      <Form.Item label="Project Order Date:">
                         <RangePicker
                           placeholder={['Start Order Date', 'End Order Date']}
                           value={orderDateRange}
@@ -893,9 +915,10 @@ function Proposals() {
                           size="large"
                           style={{ width: '100%' }}
                           format="YYYY-MM-DD"
-                        />
+                        /></Form.Item>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
+                      <Form.Item label="Proposal Enquiry Date:">
                         <RangePicker
                           placeholder={[
                             'Start Enquiry Date',
@@ -906,7 +929,7 @@ function Proposals() {
                           size="large"
                           style={{ width: '100%' }}
                           format="YYYY-MM-DD"
-                        />
+                        /></Form.Item>
                       </Col>
                     </Row>
                     <div className="mt-4 flex justify-end gap-3">
@@ -1011,11 +1034,11 @@ function Proposals() {
                     <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
                       <div>
                         <Title level={4} className="!mb-1">
-                          Proposal
+                          Proposal / Projects
                         </Title>
                         <p className="text-slate-500 text-sm">
                           Showing {filteredData.length} of {tableData.length}{' '}
-                          proposals
+                          proposals / Projects
                         </p>
                       </div>
                       <ActionButtons label="Proposal" onAdd={openAddModal} />
@@ -1026,7 +1049,8 @@ function Proposals() {
                       dataSource={filteredData}
                       loading={tableLoading}
                       pagination={{ pageSize: 10 }}
-                      scroll={{ x: 4200 }}
+                      scroll={{ x: 4200, y: 600 }}
+                      sticky
                       bordered
                     />
                   </div>

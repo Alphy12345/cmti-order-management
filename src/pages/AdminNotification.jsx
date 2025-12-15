@@ -1,0 +1,228 @@
+import React, { useEffect, useState } from "react";
+import axios from "axios";
+import { format } from "date-fns";
+
+const AdminNotification = () => {
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    axios
+      .get("http://172.18.100.160:8000/notifications/")
+      .then((response) => {
+        const filtered = response.data.filter(
+          (n) => n.trigerred_by !== "admin" && n.is_read !== 1
+        );
+        setNotifications(filtered);
+      })
+      .catch((error) => console.error("Error fetching notifications:", error));
+  }, []);
+
+  const markAsRead = (id) => {
+    axios
+      .put(`http://172.18.100.160:8000/notifications/${id}`, { is_read: 1 })
+      .then(() => {
+        setNotifications(notifications.filter((n) => n.id !== id));
+      })
+      .catch((error) => console.error("Error marking as read:", error));
+  };
+
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        backgroundColor: "#f8fafc",
+        padding: "40px 20px",
+        fontFamily: "'Inter', 'Segoe UI', sans-serif",
+      }}
+    >
+      {/* Remove or increase maxWidth — this is the key change */}
+      <div style={{ maxWidth: "1500px", margin: "0 auto" }}>  {/* Changed from 800px to 1200px */}
+        {/* Header */}
+        <div style={{ textAlign: "center", marginBottom: "40px" }}>
+          <h1
+            style={{
+              fontSize: "32px",
+              fontWeight: "600",
+              color: "#1e293b",
+              margin: "0 0 8px 0",
+            }}
+          >
+            Notifications
+          </h1>
+          <p style={{ color: "#64748b", fontSize: "16px" }}>
+            {notifications.length > 0
+              ? `You have ${notifications.length} unread notification${notifications.length > 1 ? "s" : ""}`
+              : "No new notifications"}
+          </p>
+        </div>
+
+        {/* Empty State */}
+        {notifications.length === 0 ? (
+          <div
+            style={{
+              background: "white",
+              borderRadius: "16px",
+              padding: "80px 40px",
+              textAlign: "center",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.05)",
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            <div
+              style={{
+                width: "80px",
+                height: "80px",
+                backgroundColor: "#f1f5f9",
+                borderRadius: "50%",
+                margin: "0 auto 24px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <span style={{ fontSize: "36px" }}>Check</span>
+            </div>
+            <h3 style={{ fontSize: "22px", fontWeight: "600", color: "#1e293b", margin: "0 0 8px" }}>
+              All caught up!
+            </h3>
+            <p style={{ color: "#64748b", fontSize: "16px" }}>
+              There are no new notifications at the moment.
+            </p>
+          </div>
+        ) : (
+          /* Notifications List */
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            {notifications.map((n, i) => (
+              <div
+                key={n.id}
+                style={{
+                  background: "white",
+                  borderRadius: "14px",
+                  padding: "24px",
+                  boxShadow: "0 4px 16px rgba(0,0,0,0.06)",
+                  border: "1px solid #e2e8f0",
+                  transition: "all 0.25s ease",
+                  animation: `fadeIn 0.4s ease-out ${i * 0.1}s both`,
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.boxShadow = "0 10px 30px rgba(0,0,0,0.1)";
+                  e.currentTarget.style.transform = "translateY(-2px)";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.06)";
+                  e.currentTarget.style.transform = "translateY(0)";
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                      <strong style={{ fontSize: "17px", color: "#1e293b" }}>{n.user_name}</strong>
+                      <span style={{ color: "#94a3b8", fontSize: "14px" }}>•</span>
+                      <span style={{ color: "#64748b", fontSize: "14px" }}>
+                        {n.created_at && format(new Date(n.created_at), "dd MMM yyyy, HH:mm")}
+                      </span>
+                    </div>
+
+                    <p style={{ fontSize: "16px", color: "#475569", lineHeight: "1.6", margin: "12px 0" }}>
+                      {n.message}
+                    </p>
+
+                    {/* Optional details */}
+                    {(n.project_number || n.proposal_name || n.document_name) && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "12px" }}>
+                        {n.project_number && (
+                          <span
+                            style={{
+                              background: "#f8fafc",
+                              color: "#475569",
+                              padding: "6px 12px",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              border: "1px solid #e2e8f0",
+                            }}
+                          >
+                            Project #{n.project_number}
+                          </span>
+                        )}
+                        {n.proposal_name && (
+                          <span
+                            style={{
+                              background: "#f8fafc",
+                              color: "#475569",
+                              padding: "6px 12px",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              border: "1px solid #e2e8f0",
+                            }}
+                          >
+                            {n.proposal_name}
+                          </span>
+                        )}
+                        {n.document_name && (
+                          <span
+                            style={{
+                              background: "#f8fafc",
+                              color: "#475569",
+                              padding: "6px 12px",
+                              borderRadius: "8px",
+                              fontSize: "13px",
+                              border: "1px solid #e2e8f0",
+                            }}
+                          >
+                            {n.document_name}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Mark as Read Button */}
+                  <button
+                    onClick={() => markAsRead(n.id)}
+                    style={{
+                      backgroundColor: "#1e293b",
+                      color: "white",
+                      border: "none",
+                      padding: "10px 20px",
+                      borderRadius: "10px",
+                      fontSize: "14px",
+                      fontWeight: "500",
+                      cursor: "pointer",
+                      transition: "all 0.2s",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.target.style.backgroundColor = "#0f172a";
+                      e.target.style.transform = "scale(1.05)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.backgroundColor = "#1e293b";
+                      e.target.style.transform = "scale(1)";
+                    }}
+                  >
+                    Mark as Read
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Simple fade-in animation */}
+      <style jsx>{`
+        @keyframes fadeIn {
+          from {
+            opacity: 0;
+            transform: translateY(15px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+      `}</style>
+    </div>
+  );
+};
+
+export default AdminNotification;

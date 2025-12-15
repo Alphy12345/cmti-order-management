@@ -4,9 +4,12 @@ import {
   SettingOutlined,
   ProjectOutlined,
   BarChartOutlined,
+  BellOutlined
 } from '@ant-design/icons'
 import cmtiLogo from '../assets/waitro-member-cmti.png'
 import { useLocation, useNavigate } from 'react-router-dom'
+import React, { useEffect, useState } from 'react';
+import axios from 'axios';
 
 const { Sider } = Layout
 const { Text } = Typography
@@ -26,6 +29,10 @@ function Sidebar() {
       ? 'projects'
       : section === 'analytics'
       ? 'analytics'
+      : section === 'master-proposals'
+      ? 'master-proposals'
+      : section === 'notification'
+      ? 'notification'
       : 'proposals'
 
   let userName = ''
@@ -40,6 +47,19 @@ function Sidebar() {
   } catch (error) {
     console.error('Failed to read user from localStorage', error)
   }
+
+  const [notificationCount, setNotificationCount] = useState(0);
+
+  useEffect(() => {
+    axios.get('http://172.18.100.160:8000/notifications/')
+      .then(response => {
+        const unreadCount = response.data.filter(notification => 
+          notification.trigerred_by !== 'admin' && notification.is_read !== 1
+        ).length;
+        setNotificationCount(unreadCount);
+      })
+      .catch(error => console.error('Error fetching notifications:', error));
+  }, []);
 
   const handleLogout = () => {
     try {
@@ -79,16 +99,30 @@ function Sidebar() {
         <Menu
           mode="inline"
           selectedKeys={[selectedKey]}
-            onClick={(info) => {
+          onClick={(info) => {
             const prefix = basePath === 'ch' ? '/ch' : basePath === 'gh' ? '/gh' : '/admin'
 
             if (info.key === 'configuration') navigate(`${prefix}/configuration`)
             else if (info.key === 'projects') navigate(`${prefix}/projects`)
             else if (info.key === 'analytics') navigate(`${prefix}/analytics`)
+            else if (info.key === 'master-proposals') navigate(`${prefix}/master-proposals`)
+            else if (info.key === 'notification') navigate(`${prefix}/notification`)
             else navigate(`${prefix}/proposals`)
           }}
           items={[
             { key: 'proposals', icon: <ProfileOutlined />, label: 'Proposals / Projects' },
+            { key: 'projects', icon: <ProjectOutlined />, label: 'Projects Documents' },
+
+            ...(basePath === 'admin'
+              ? [
+                  {
+                    key: 'master-proposals',
+                    icon: <ProfileOutlined />,
+                    label: 'Master Proposals',
+                  },
+                ]
+              : []),
+
             { key: 'analytics', icon: <BarChartOutlined />, label: 'Analytics' },
             ...(basePath === 'admin'
               ? [
@@ -99,7 +133,32 @@ function Sidebar() {
                   },
                 ]
               : []),
-            { key: 'projects', icon: <ProjectOutlined />, label: 'Project Documents' },
+
+              ...(basePath === 'admin'
+              ? [
+                  {
+                    key: 'notification',
+                    icon: <BellOutlined />, 
+                    label: (
+                      <span>
+                        Notification
+                        {notificationCount > 0 && (
+                          <span style={{
+                            backgroundColor: '#ff4d4f',
+                            borderRadius: '50%',
+                            color: 'white',
+                            padding: '0 6px',
+                            marginLeft: '8px',
+                            fontSize: '12px'
+                          }}>
+                            {notificationCount}
+                          </span>
+                        )}
+                      </span>
+                    ),
+                  },
+                ]
+              : []),
           ]}
           className="text-base"
         />

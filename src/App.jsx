@@ -4,6 +4,7 @@ import Proposals from './pages/Proposals'
 import Analytics from './pages/Analytics'
 import Configuration from './pages/Configuration'
 import Projects from './pages/Projects'
+import MasterProposals from './pages/MasterProposals'
 import GHProposals from './pages/GHproposals'
 import GHProjects from './pages/GHprojects'
 import CHProposals from './pages/CHproposals'
@@ -13,6 +14,7 @@ import CreateLogin from './pages/CreateLogin'
 import Sidebar from './components/Sidebar'
 
 import './App.css'
+import AdminNotification from './pages/AdminNotification'
 
 const { Content } = Layout
 
@@ -85,12 +87,17 @@ function RoleProtectedLayout({ basePath }) {
         >
           <Routes>
             <Route path="proposals" element={<ProposalsComponent />} />
+            {isAdmin && (
+              <Route path="master-proposals" element={<MasterProposals />} />
+            )}
             <Route path="analytics" element={<Analytics />} />
             <Route path="projects" element={<ProjectsComponent />} />
 
             {/* Only admins can access configuration */}
             {isAdmin && (
+              <>
               <Route path="configuration" element={<Configuration />} />
+              <Route path="notification" element={<AdminNotification />} /> </>
             )}
 
             {/* Catch-all: redirect to proposals */}

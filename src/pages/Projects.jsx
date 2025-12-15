@@ -73,7 +73,9 @@ function Projects() {
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [stageConfig, setStageConfig] = useState([])
   
+  // Project details state
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
   const [loadingStages, setLoadingStages] = useState(false)
@@ -118,6 +120,7 @@ function Projects() {
     }
 
     fetchProjects()
+    fetchStageConfig()
   }, [])
 
   const fetchProjects = async () => {
@@ -139,6 +142,26 @@ function Projects() {
     }
   }
 
+  const fetchStageConfig = async () => {
+    try {
+      const res = await fetch(`${apiBase}/stages/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch stage configuration')
+      }
+      const data = await res.json()
+      const normalized = Array.isArray(data)
+        ? data.map((item) => ({ ...item, key: item.id }))
+        : []
+      setStageConfig(normalized)
+      return normalized
+    } catch (error) {
+      console.error('Error fetching stage configuration:', error)
+      return []
+    }
+  }
+
   const cards = useMemo(() => projectRows || [], [projectRows])
 
   const restrictedStages = {
@@ -150,13 +173,41 @@ function Projects() {
   const fetchStageData = async (projectId) => {
     setLoadingStages(true)
     try {
+      let config = stageConfig
+      if (!config || config.length === 0) {
+        config = await fetchStageConfig()
+      }
+
       const res = await fetch(`${apiBase}/proposals/stage_wise/${projectId}`)
       if (!res.ok) {
         const err = await res.text().catch(() => 'Failed')
         throw new Error(err || 'Failed to fetch stage data')
       }
       const data = await res.json()
-      setStageData(Array.isArray(data) ? data : [])
+
+      const getPosition = (stage) => {
+        const matched = config.find((s) => s.id === stage.stage_id)
+        const raw = matched?.position ?? stage.position
+
+        const num = typeof raw === 'number' ? raw : Number(raw)
+        return Number.isNaN(num) ? null : num
+      }
+
+      const sorted = Array.isArray(data)
+        ? [...data].sort((a, b) => {
+            const pa = getPosition(a)
+            const pb = getPosition(b)
+
+            const paValid = pa !== null
+            const pbValid = pb !== null
+
+            if (!paValid && !pbValid) return 0
+            if (!paValid) return 1
+            if (!pbValid) return -1
+            return pa - pb
+          })
+        : []
+      setStageData(sorted)
     } catch (error) {
       console.error('Error fetching stages:', error)
       message.error('Failed to load stage data')

@@ -69,7 +69,7 @@ function CreateLogin() {
         <div className="flex flex-col items-center gap-4 mb-6">
           <img src={cmtiLogo} alt="CMTI logo" className="h-16 w-auto object-contain" />
           <Title level={3} className="!mb-0 text-center">
-           Sign Up
+            Create Login
           </Title>
           <Text type="secondary" className="text-center">
             Fill in the details to create a new login
@@ -149,7 +149,7 @@ function CreateLogin() {
               Back to Login
             </Button>
             <Button type="primary" htmlType="submit" loading={loading}>
-            Sign Up
+              Create Login
             </Button>
           </div>
         </Form>

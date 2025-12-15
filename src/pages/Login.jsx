@@ -158,7 +158,7 @@ function Login() {
             className="ml-2 text-blue-600 hover:text-blue-700 font-medium"
             onClick={() => navigate('/create-login')}
           >
-            Sign Up
+            Create login
           </button>
         </div>
       </Card>
