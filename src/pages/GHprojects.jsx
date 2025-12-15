@@ -17,11 +17,8 @@ import {
   Popconfirm,
   Form,
   DatePicker,
-  Row,
-  Col,
-  Select,
+  Select
 } from 'antd'
-
 import {
   EyeOutlined,
   FileTextOutlined,
@@ -34,9 +31,7 @@ import {
   EditOutlined,
   DeleteOutlined,
   ArrowLeftOutlined,
-  SearchOutlined,
 } from '@ant-design/icons'
-
 import dayjs from 'dayjs'
 import customParseFormat from 'dayjs/plugin/customParseFormat'
 dayjs.extend(customParseFormat)
@@ -48,46 +43,47 @@ const { Dragger } = Upload
 const formatValue = (value) => (value ? value : 'Not available')
 const safeId = (item) => item?.id ?? item?.key ?? ''
 
-// Color theme for cards based on project number (same as admin Projects page)
 const getProjectTheme = (projectNumber) => {
   const num = (projectNumber || '').toString().toUpperCase()
-
   if (num.includes('ISP')) {
     return {
-      cardClass: 'bg-blue-50 border-l-4 border-blue-500',
-      pillClass: 'bg-blue-500 text-white',
+      cardClass: 'border-l-4 border-blue-500 bg-blue-50',
+      pillClass: 'bg-blue-500/10 text-blue-700 border border-blue-500/30',
       pillLabel: 'ISP',
     }
   }
-
   if (num.includes('GSP')) {
     return {
-      cardClass: 'bg-red-50 border-l-4 border-red-500',
-      pillClass: 'bg-red-500 text-white',
+      cardClass: 'border-l-4 border-red-500 bg-red-50',
+      pillClass: 'bg-red-500/10 text-red-700 border border-red-500/30',
       pillLabel: 'GSP',
     }
   }
-
   return {
-    cardClass: 'bg-green-50 border-l-4 border-green-500',
-    pillClass: 'bg-green-600 text-white',
+    cardClass: 'border-l-4 border-green-500 bg-green-50',
+    pillClass: 'bg-green-500/10 text-green-700 border border-green-500/30',
     pillLabel: 'Other',
   }
 }
 
-function Projects() {
+function GHprojects() {
   const apiBase = 'http://172.18.100.160:8000'
   
   // Projects list state
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
-  
   const [currentUserName, setCurrentUserName] = useState('')
+  const [stageConfig, setStageConfig] = useState([])
   
+  // Project details state
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
   const [loadingStages, setLoadingStages] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
+  const [allotmentModalVisible, setAllotmentModalVisible] = useState(false)
+  const [selectedStageForAllotment, setSelectedStageForAllotment] = useState(null)
+  const [allotmentData, setAllotmentData] = useState(null)
+  const [loadingAllotment, setLoadingAllotment] = useState(false)
 
   // Upload
   const [uploadModalVisible, setUploadModalVisible] = useState(false)
@@ -113,9 +109,22 @@ function Projects() {
   const [editingPayment, setEditingPayment] = useState(null)
   const [submittingPayment, setSubmittingPayment] = useState(false)
 
-  // Fetch projects on mount
+  // Fetch projects on mount and read current user from localStorage
   useEffect(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser && parsedUser.name) {
+          setCurrentUserName(parsedUser.name)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error)
+    }
+
     fetchProjects()
+    fetchStageConfig()
   }, [])
 
   const fetchProjects = async () => {
@@ -158,58 +167,86 @@ function Projects() {
     }
   }
 
-  const [searchText, setSearchText] = useState('')
-  const [selectedCenter, setSelectedCenter] = useState(undefined)
-
-  const centerOptions = useMemo(() => {
-    const centers = [...new Set(projectRows
-      .map(p => p.center?.trim())
-      .filter(Boolean))]
-
-    return centers.sort().map(c => ({ label: c, value: c }))
-  }, [projectRows])
-
-  const filteredCards = useMemo(() => {
-    return (projectRows || [])
-      .filter(p => p?.project_number)
-      .filter(p => {
-        const searchLower = searchText.toLowerCase().trim()
-        if (searchLower) {
-          const inNumber   = p.project_number?.toString().toLowerCase().includes(searchLower)
-          const inActivity = p.activity?.toLowerCase().includes(searchLower)
-          const inCoord    = p.project_co_ordinator?.toLowerCase().includes(searchLower)
-          if (!(inNumber || inActivity || inCoord)) return false
-        }
-
-        if (selectedCenter && p.center?.trim() !== selectedCenter) return false
-
-        return true
+  const fetchStageConfig = async () => {
+    try {
+      const res = await fetch(`${apiBase}/stages/`, {
+        headers: { accept: 'application/json' },
       })
-  }, [projectRows, searchText, selectedCenter])
-
-  const handleClearFilters = () => {
-    setSearchText('')
-    setSelectedCenter(undefined)
+      if (!res.ok) {
+        throw new Error('Failed to fetch stage configuration')
+      }
+      const data = await res.json()
+      const normalized = Array.isArray(data)
+        ? data.map((item) => ({ ...item, key: item.id }))
+        : []
+      setStageConfig(normalized)
+      return normalized
+    } catch (error) {
+      console.error('Error fetching stage configuration:', error)
+      return []
+    }
   }
 
   const cards = useMemo(() => projectRows || [], [projectRows])
 
-  const restrictedStages = {
-    uploadDisabled: ['progress', 'payments'],
-    remarksDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'payments', 'closure report'],
-    paymentDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'progress', 'closure report'],
+  const getStageAccessList = (stage) => {
+    if (!stage) return []
+    let config = null
+    if (Array.isArray(stageConfig)) {
+      config = stageConfig.find((s) => s.id === stage.stage_id)
+      if (!config) {
+        const name = (stage.stage_name || '').trim().toLowerCase()
+        if (name) {
+          config = stageConfig.find(
+            (s) => (s.name || '').trim().toLowerCase() === name
+          )
+        }
+      }
+    }
+
+    const raw = config?.access
+    if (!raw || typeof raw !== 'string') return []
+    return raw
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
   }
 
   const fetchStageData = async (projectId) => {
     setLoadingStages(true)
     try {
+      const config = await fetchStageConfig()
+
       const res = await fetch(`${apiBase}/proposals/stage_wise/${projectId}`)
       if (!res.ok) {
         const err = await res.text().catch(() => 'Failed')
         throw new Error(err || 'Failed to fetch stage data')
       }
       const data = await res.json()
-      setStageData(Array.isArray(data) ? data : [])
+
+      const getPosition = (stage) => {
+        const matched = config.find((s) => s.id === stage.stage_id)
+        const raw = matched?.position ?? stage.position
+
+        const num = typeof raw === 'number' ? raw : Number(raw)
+        return Number.isNaN(num) ? null : num
+      }
+
+      const sorted = Array.isArray(data)
+        ? [...data].sort((a, b) => {
+            const pa = getPosition(a)
+            const pb = getPosition(b)
+
+            const paValid = pa !== null
+            const pbValid = pb !== null
+
+            if (!paValid && !pbValid) return 0
+            if (!paValid) return 1
+            if (!pbValid) return -1
+            return pa - pb
+          })
+        : []
+      setStageData(sorted)
     } catch (error) {
       console.error('Error fetching stages:', error)
       message.error('Failed to load stage data')
@@ -230,13 +267,235 @@ function Projects() {
     setStageData([])
   }
 
+  const handleOpenAllotmentModal = (stage) => {
+    const projectId = Number(safeId(selectedProject))
+    if (!projectId) {
+      message.error('Project ID not found')
+      return
+    }
+
+    setSelectedStageForAllotment(stage)
+    setAllotmentModalVisible(true)
+    setLoadingAllotment(true)
+    setAllotmentData(null)
+
+    fetch(`${apiBase}/proposals/payments/${projectId}`, {
+      headers: { accept: 'application/json' },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errText = await res.text().catch(() => 'Failed to load allotment sheet')
+          throw new Error(errText || 'Failed to load allotment sheet')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setAllotmentData(data)
+      })
+      .catch((err) => {
+        console.error('Allotment sheet fetch error:', err)
+        message.error(err.message || 'Failed to load allotment sheet')
+      })
+      .finally(() => {
+        setLoadingAllotment(false)
+      })
+  }
+
+  const handleCloseAllotmentModal = () => {
+    setAllotmentModalVisible(false)
+    setSelectedStageForAllotment(null)
+    setAllotmentData(null)
+    setLoadingAllotment(false)
+  }
+
+  const handleDownloadAllotment = async (format) => {
+    const projectId = Number(safeId(selectedProject))
+    if (!projectId) {
+      message.error('Project ID not found')
+      return
+    }
+
+    const normalizedFormat = (format || '').toLowerCase() === 'pdf' ? 'pdf' : 'word'
+
+    try {
+      const res = await fetch(`${apiBase}/proposals/payments/${projectId}`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch allotment data')
+      }
+      const data = await res.json()
+
+      const paymentsRows = Array.isArray(data?.payments) ? data.payments : []
+
+      const html = `<!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="UTF-8" />
+      <title>Allotment Sheet</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #000; padding: 32px; }
+        h2 { text-align: center; margin-bottom: 32px; }
+        .label { font-weight: 600; margin-right: 8px; }
+        .block { margin-bottom: 6px; }
+
+        table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+        th, td { border: 1px solid #000; padding: 4px; font-size: 12px; }
+        .copy-to { margin-top: 32px; font-size: 12px; }
+        .header-table { width: 100%; border: none; margin-bottom: 8px; }
+        .header-table td { border: none; padding: 0; }
+        .header-left { text-align: left; }
+        .header-right { text-align: right; }
+        .copy-to-table { width: 100%; border: none; margin-top: 8px; text-align: center; }
+        .copy-to-table td { border: none; padding-top: 4px; }
+      </style>
+    </head>
+    <body>
+      <div>
+        <h2>PP &amp; BD DEPT</h2>
+
+        <table class="header-table">
+          <tr>
+            <td class="header-left">
+              <span class="label">Released to C -</span>
+              <span class="label">${data?.center || ''}</span>
+            </td>
+            <td class="header-right">
+              <span class="label">Date:</span>
+              <span class="label">${data?.order_date || ''}</span>
+            </td>
+          </tr>
+        </table>
+
+        <div class="block">
+          <span class="label">${data?.activity || 'Project Name'}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Customer:</span>
+          <span>${(data?.party_name || '') + (data?.address ? ', ' + data.address : '')}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Contact Person:</span>
+          <span>${data?.email || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Co-ordinator:</span>
+          <span>${data?.project_co_ordinator || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Email &amp; Contact details:</span>
+          <span></span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Number:</span>
+          <span class="label">${data?.project_number || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Name:</span>
+          <span class="label">${data?.activity || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Order Value:</span>
+          <span>${data?.order_value || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Purchase order No:</span>
+          <span>${data?.order_number || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Delivery date:</span>
+          <span>${data?.delivery_date || ''}</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Full / Stage Payment</th>
+              <th>Invoice No and Amount</th>
+              <th>Invoice Date</th>
+              <th>Payment Received</th>
+              <th>Payment Received Date</th>
+              <th>Balance amount and remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${paymentsRows.length > 0
+              ? paymentsRows.map((row) => `
+                <tr>
+                  <td></td>
+                  <td>${row.invoice_no || ''}</td>
+                  <td>${row.invoice_date || ''}</td>
+                  <td>${row.amount_recieved || ''}</td>
+                  <td>${row.recieved_date || ''}</td>
+                  <td>${row.bal || ''}</td>
+                </tr>`).join('')
+              : `
+                <tr>
+                  <td colspan="6" style="text-align:center;color:#666;">No payment records available</td>
+                </tr>
+              `}
+          </tbody>
+        </table>
+
+        <div class="copy-to">
+          <div class="block">Copy to:</div>
+          <table class="copy-to-table">
+            <tr>
+              <td>GH (P&S)</td>
+              <td>Sr. CAO</td>
+              <td>GH (C-${data?.center || ''})</td>
+              <td>CH (C-${data?.center || ''})</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px; text-align: right; font-weight: 600;">CH (PP&amp;BD)</div>
+        <div style="margin-top: 16px; font-weight: 600; font-size: 12px;">Director: For kind information</div>
+      </div>
+    </body>
+  </html>`
+      if (normalizedFormat === 'word') {
+        const blob = new Blob([html], { type: 'application/msword' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `allotment-${projectId}.doc`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } else {
+        const win = window.open('', '_blank')
+        if (!win) {
+          message.error('Popup blocked. Please allow popups to download the PDF.')
+          return
+        }
+        win.document.open()
+        win.document.write(html + '<script>window.print();</script>')
+        win.document.close()
+      }
+    } catch (err) {
+      console.error('Allotment download error:', err)
+      message.error(err.message || 'Failed to download allotment sheet')
+    }
+  }
+
   // Upload Document handlers
   const handleOpenUploadModal = (stage) => {
     setSelectedStageForUpload(stage)
     setUploadModalVisible(true)
     setFileToUpload(null)
-    setDocumentName('')
-    setUploadedBy(currentUserName)
+    setDocumentName((stage.stage_name || 'Document').toString())
+    setUploadedBy(currentUserName || '')
     setDescription('')
   }
 
@@ -248,9 +507,7 @@ function Projects() {
 
   const handleUpload = async () => {
     if (!fileToUpload) return message.error('Please select a file')
-    if (!documentName.trim()) return message.error('Document name is required')
-
-    const uploader = (currentUserName || '').trim()
+    const uploader = (uploadedBy || currentUserName || '').trim()
     if (!uploader) return message.error('Your name is required')
 
     setUploading(true)
@@ -260,7 +517,6 @@ function Projects() {
     formData.append('project_id', safeId(selectedProject))
     formData.append('stage_id', selectedStageForUpload.stage_id)
     formData.append('uploaded_by', uploader)
-
     formData.append('file', fileToUpload)
 
     try {
@@ -288,7 +544,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setRemarksModalVisible(true)
     setRemarksText('')
-    setRemarksBy(currentUserName)
+    setRemarksBy('')
     setEditingRemark(null)
   }
 
@@ -296,7 +552,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setEditingRemark(remark)
     setRemarksText(remark.remarks || '')
-    setRemarksBy(currentUserName || remark.updated_by || '')
+    setRemarksBy(remark.updated_by || '')
     setRemarksModalVisible(true)
   }
 
@@ -314,8 +570,7 @@ function Projects() {
 
   const handleSubmitRemarks = async () => {
     if (!remarksText.trim()) return message.error('Remarks required')
-
-    const name = currentUserName
+    if (!remarksBy.trim()) return message.error('Your name required')
 
     setSubmittingRemarks(true)
     try {
@@ -327,7 +582,7 @@ function Projects() {
             project_id: safeId(selectedProject),
             stage_id: selectedStageForRemarks.stage_id,
             remarks: remarksText.trim(),
-            updated_by: name,
+            updated_by: remarksBy.trim(),
           }),
         })
         if (!res.ok) {
@@ -343,7 +598,7 @@ function Projects() {
             project_id: safeId(selectedProject),
             stage_id: selectedStageForRemarks.stage_id,
             remarks: remarksText.trim(),
-            updated_by: name,
+            updated_by: remarksBy.trim(),
           }),
         })
         if (!res.ok) throw new Error('Failed to add remark')
@@ -447,6 +702,45 @@ function Projects() {
     }
   }
 
+  const [searchText, setSearchText] = useState('')
+  const [selectedCenter, setSelectedCenter] = useState(undefined)   // “center” field in your project objects
+
+  // Extract unique centers-centers for the dropdown (you can adjust the field name if it’s different)
+  const centerOptions = useMemo(() => {
+    const centers = [...new Set(projectRows
+      .map(p => p.center?.trim())
+      .filter(Boolean))]
+
+    return centers.sort().map(c => ({ label: c, value: c }))
+  }, [projectRows])
+
+  // Filtered list (search + center)
+  const filteredCards = useMemo(() => {
+    return (projectRows || [])
+      .filter(p => p?.project_number)                     // keep only projects that have a number
+      .filter(p => {
+        // Search – checks project_number, activity and coordinator
+        const searchLower = searchText.toLowerCase().trim()
+        if (searchLower) {
+          const inNumber   = p.project_number?.toString().toLowerCase().includes(searchLower)
+          const inActivity = p.activity?.toLowerCase().includes(searchLower)
+          const inCoord    = p.project_co_ordinator?.toLowerCase().includes(searchLower)
+          if (! (inNumber || inActivity || inCoord)) return false
+        }
+
+        // Center filter
+        if (selectedCenter && p.center?.trim() !== selectedCenter) return false
+
+        return true
+      })
+  }, [projectRows, searchText, selectedCenter])
+
+  // Clear all filters
+  const handleClearFilters = () => {
+    setSearchText('')
+    setSelectedCenter(undefined)
+  }
+
   const getPaymentColumns = (stage) => [
     { title: 'Inv #', dataIndex: 'invoice_no', width: 120 },
     { title: 'Inv Date', dataIndex: 'invoice_date', width: 110 },
@@ -486,7 +780,6 @@ function Projects() {
     maxCount: 1,
     beforeUpload: (file) => {
       setFileToUpload(file)
-      if (!documentName) setDocumentName(file.name.split('.').slice(0, -1).join('.'))
       return false
     },
     onRemove: () => {
@@ -511,6 +804,11 @@ function Projects() {
 
   // Project details view
   if (selectedProject) {
+    const getAllotmentPaymentRow = (index) => {
+      if (!allotmentData || !Array.isArray(allotmentData.payments)) return {}
+      return allotmentData.payments[index] || {}
+    }
+
     return (
       <div className="rounded-3xl bg-white p-6 shadow-sm">
         <div className="mb-6 flex items-center justify-between">
@@ -548,10 +846,11 @@ function Projects() {
                 const hasDocs = Array.isArray(stage.documents) && stage.documents.length > 0
                 const hasProg = Array.isArray(stage.progress) && stage.progress.length > 0
                 const hasPay = Array.isArray(stage.payments) && stage.payments.length > 0
-
-                const hideUpload = restrictedStages.uploadDisabled.includes(stageNameLower)
-                const hideRemarks = restrictedStages.remarksDisabled.includes(stageNameLower)
-                const hidePayment = restrictedStages.paymentDisabled.includes(stageNameLower)
+                const accessList = getStageAccessList(stage)
+                const canUpload = accessList.includes('upload')
+                const canAddRemarks = accessList.includes('add remarks')
+                const canAddPayments = accessList.includes('add payments')
+                const canViewAllotment = accessList.includes('view allotment sheet')
 
                 return (
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
@@ -559,7 +858,7 @@ function Projects() {
                       <Title level={4} className="!mb-0">
                         <Tag color="blue">{stage.stage_id}</Tag> {stageName || 'Stage'}
                       </Title>
-                      {!hideUpload && (
+                      {canUpload && (
                         <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
                           Upload
                         </Button>
@@ -588,9 +887,41 @@ function Projects() {
                       </div>
                     )}
 
+                    {canViewAllotment && (
+                      <div className="mb-6">
+                        <Card size="small" className="border-l-4 border-l-indigo-600">
+                          <div className="flex items-center justify-between">
+                            <Text strong>Allotment Sheet</Text>
+                            <Space>
+                              <Button
+                                size="small"
+                                type="primary"
+                                icon={<EyeOutlined />}
+                                onClick={() => handleOpenAllotmentModal(stage)}
+                              >
+                                View
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => handleDownloadAllotment('word')}
+                              >
+                                Download as Word
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => handleDownloadAllotment('pdf')}
+                              >
+                                Download as PDF
+                              </Button>
+                            </Space>
+                          </div>
+                        </Card>
+                      </div>
+                    )}
+
                     <div className="mb-6">
                       <div className="flex justify-between items-center mb-3">
-                        {!hideRemarks && (
+                        {canAddRemarks && (
                           <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => handleOpenRemarksModal(stage)}>
                             Add Remark
                           </Button>
@@ -620,7 +951,7 @@ function Projects() {
 
                     <div>
                       <div className="flex justify-between items-center mb-3">
-                        {!hidePayment && (
+                        {canAddPayments && (
                           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
                             Add Payment
                           </Button>
@@ -722,9 +1053,9 @@ function Projects() {
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">Click or drag file to this area</p>
             </Dragger>
-            <Input placeholder="Document Name *" value={documentName} onChange={(e) => setDocumentName(e.target.value)} />
+            <Input placeholder="Document Name *" value={documentName} disabled />
             <TextArea placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-            <Input placeholder="Your Name *" value={currentUserName} disabled />
+            <Input placeholder="Your Name *" value={uploadedBy} disabled />
           </Space>
         </Modal>
 
@@ -752,7 +1083,7 @@ function Projects() {
         >
           <Space direction="vertical" size="large" className="w-full">
             <TextArea placeholder="Enter your remarks *" value={remarksText} onChange={(e) => setRemarksText(e.target.value)} rows={4} />
-            <Input placeholder="Your Name *" value={currentUserName} disabled />
+            <Input placeholder="Your Name *" value={remarksBy} onChange={(e) => setRemarksBy(e.target.value)} />
           </Space>
         </Modal>
 
@@ -765,6 +1096,162 @@ function Projects() {
         >
           <iframe src={viewDocumentUrl} className="w-full h-[80vh]" title="Document" />
         </Modal>
+
+        <Modal
+          title={`Allotment Sheet - ${selectedStageForAllotment?.stage_name || ''}`}
+          open={allotmentModalVisible}
+          onCancel={handleCloseAllotmentModal}
+          footer={null}
+          width={900}
+        >
+          <div className="bg-white text-black p-8 max-h-[80vh] overflow-auto">
+            <div className="text-center mb-8">
+              <h2 className="text-xl font-semibold">PP &amp; BD DEPT</h2>
+            </div>
+
+            {loadingAllotment && (
+              <div className="py-10 text-center text-slate-500">Loading allotment sheet...</div>
+            )}
+
+            {!loadingAllotment && (
+              <>
+
+                <div className="flex justify-between mb-2">
+                  <div>
+                    <span className="mr-2 font-semibold">Released to C -</span>
+                    <span className="mr-2 font-semibold">
+                      {allotmentData?.center || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="mr-2 font-semibold">Date:</span>
+                    <span className="mr-2 font-semibold">
+                      {allotmentData?.order_date || ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-1">
+                  <div className=" inline-block px-4 py-1 font-semibold">
+                    {allotmentData?.activity || 'Project Name'}
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-8 text-sm">
+                  <div>
+                    <span className="font-semibold mr-2">Customer:</span>
+                    <span className="inline-block min-w-[300px] align-middle">
+                      {`${allotmentData?.party_name || ''}${
+                        allotmentData?.address ? ', ' + allotmentData.address : ''
+                      }`}
+                    </span>
+                  </div>
+
+
+                  <div>
+                    <span className="font-semibold mr-2">Contact Person:</span>
+                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email ||''} </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Co-ordinator:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.project_co_ordinator || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Email &amp; Contact details:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Number:</span>
+                    <span className="inline-block min-w-[300px] font-semibold align-middle">
+                      {allotmentData?.project_number || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Name:</span>
+                    <span className="inline-block min-w-[300px] font-semibold  align-middle">
+                      {allotmentData?.activity || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Order Value:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.order_value || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Purchase order No:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.order_number || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Delivery date:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.delivery_date || ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <table className="w-full border border-black text-xs">
+                    <thead>
+                      <tr>
+                        <th className="border border-black px-2 py-1 text-left">Full / Stage Payment</th>
+                        <th className="border border-black px-2 py-1 text-left">Invoice No and Amount</th>
+                        <th className="border border-black px-2 py-1 text-left">Invoice Date</th>
+                        <th className="border border-black px-2 py-1 text-left">Payment Received</th>
+                        <th className="border border-black px-2 py-1 text-left">Payment Received Date</th>
+                        <th className="border border-black px-2 py-1 text-left">Balance amount and remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allotmentData?.payments && Array.isArray(allotmentData.payments) && allotmentData.payments.length > 0 ? (
+                        allotmentData.payments.map((row, idx) => (
+                          <tr key={row.id || idx}>
+                            <td className="border border-black px-2 py-1"></td>
+                            <td className="border border-black px-2 py-1">{row.invoice_no || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.invoice_date || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.amount_recieved || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.recieved_date || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.bal || ''}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="border border-black px-2 py-1 text-center text-gray-500">
+                            No payment records available
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-between items-start text-sm mt-8">
+                  <div>
+                    <div className="font-semibold mb-6">Copy to:</div>
+                    <div className="inline-flex [column-gap:8.5rem]">
+                      <span style={{marginLeft:'10px'}}>GH (P&S)</span>
+                      <span>Sr. CAO</span>
+                      <span>GH (C-{allotmentData?.center || ''})</span>
+                      <span>CH (C-{allotmentData?.center || ''})</span>
+                    </div>
+
+                  </div>
+                  <div className="text-right font-semibold">CH (PP&amp;BD)</div>
+                </div>
+                <div className="mt-4 font-semibold">Director: For kind information</div>
+
+
+              </>
+            )}
+          </div>
+        </Modal>
+
       </div>
     )
   }
@@ -787,13 +1274,13 @@ function Projects() {
         />
 
         <Select
-          placeholder="Select a center"
+          placeholder="Filter by center"
           allowClear
           size="large"
           style={{ width: 240 }}
           options={centerOptions}
           value={selectedCenter}
-          onChange={value => setSelectedCenter(value || undefined)}
+          onChange={setSelectedCenter}
         />
 
         {(searchText || selectedCenter) && (
@@ -803,6 +1290,7 @@ function Projects() {
         )}
       </div>
 
+      {/* Show count of filtered projects */}
       <Text type="secondary" className="block mb-4">
         {filteredCards.length} {filteredCards.length === 1 ? 'project' : 'projects'} found
       </Text>
@@ -810,45 +1298,43 @@ function Projects() {
       {filteredCards.length === 0 ? (
         <Empty description="No projects match the current filters" />
       ) : (
-        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3 justify-center">
-          {filteredCards.map((project) => {
-            const theme = getProjectTheme(project.project_number)
-            return (
-              <Card
-                key={safeId(project)}
-                hoverable
-                className={`shadow-sm border ${theme.cardClass}`}
-              >
-                <Space direction="vertical" size="middle" className="w-full">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Text type="secondary">Project No.</Text>
-                      <Text strong className="block text-lg">
-                        {formatValue(project.project_number)}
-                      </Text>
+        <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+          {filteredCards.map((project) => (
+            (() => {
+              const theme = getProjectTheme(project.project_number)
+              return (
+                <Card
+                  key={safeId(project)}
+                  hoverable
+                  className={`shadow-sm border ${theme.cardClass}`}
+                >
+                  <Space direction="vertical" size="middle" className="w-full">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <Text type="secondary">Project No.</Text>
+                        <Text strong className="block text-lg">{formatValue(project.project_number)}</Text>
+                      </div>
+                      <span className={`px-3 py-1 rounded-full text-xs font-semibold ${theme.pillClass}`}>
+                        {theme.pillLabel}
+                      </span>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${theme.pillClass}`}>
-                      {theme.pillLabel}
-                    </span>
-                  </div>
-                  <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
-                  <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
-                  <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
-                  <Button
-                    type="primary"
-                    icon={<EyeOutlined />}
-                    onClick={() => handleViewProject(project)}
-                  >
-                    View Details
-                  </Button>
-                </Space>
-              </Card>
-            )
-          })}
+                    <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
+                    <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
+                    {project.center && (
+                      <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
+                    )}
+                    <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewProject(project)}>
+                      View Details
+                    </Button>
+                  </Space>
+                </Card>
+              )
+            })()
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-export default Projects
+export default GHprojects

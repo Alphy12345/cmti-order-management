@@ -59,6 +59,13 @@ function Configuration({ projectRows = [] }) {
     stageForm.setFieldsValue({
       name: stage?.name ?? '',
       position: stage?.position ?? undefined,
+      access:
+        typeof stage?.access === 'string' && stage.access
+          ? stage.access
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean)
+          : [],
     })
     setStageModalOpen(true)
   }
@@ -86,7 +93,14 @@ function Configuration({ projectRows = [] }) {
         },
         body: JSON.stringify({
           name: values.name,
-          position: values.position,
+          position:
+            typeof values.position === 'number'
+              ? values.position
+              : editingStage?.position ?? null,
+          access:
+            Array.isArray(values.access) && values.access.length > 0
+              ? values.access.join(',')
+              : null,
         }),
       })
       if (!response.ok) {
@@ -136,6 +150,16 @@ function Configuration({ projectRows = [] }) {
       title: 'Stage Name',
       dataIndex: 'name',
       key: 'name',
+    },
+    {
+      title: 'Access',
+      dataIndex: 'access',
+      key: 'access',
+      render: (value) => {
+        if (!value) return '-'
+        if (Array.isArray(value)) return value.join(', ')
+        return value
+      },
     },
     {
       title: 'Created At',
@@ -229,6 +253,11 @@ function Configuration({ projectRows = [] }) {
               placeholder="Leave empty to add at the end"
             />
           </Form.Item>
+          <Form.Item name="access" label="Access">
+            <Checkbox.Group
+              options={['Upload', 'Add Remarks', 'Add Payments', 'View Allotment Sheet']}
+            />
+          </Form.Item>
         </Form>
       </Modal>
     </div>
@@ -236,5 +265,4 @@ function Configuration({ projectRows = [] }) {
 }
 
 export default Configuration
-
 

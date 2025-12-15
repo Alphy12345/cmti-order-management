@@ -123,7 +123,12 @@ function Sidebar() {
                 ]
               : []),
 
-            { key: 'analytics', icon: <BarChartOutlined />, label: 'Analytics' },
+            ...(basePath === 'admin' ? [{
+                    key: 'analytics',
+                    icon: <BarChartOutlined />,
+                    label: 'Analytics'
+            }] : []),
+
             ...(basePath === 'admin'
               ? [
                   {

@@ -7,14 +7,16 @@ const { Title } = Typography
 
 const API_BASE_URL = 'http://172.18.100.160:8000'
 
-const AVAILABLE_YEARS = [2025, 2024, 2023, 2022, 2021, 2020, 2019, 2018, 2017, 2016, 2015]
+const BASE_START_YEAR = 2015
+const CURRENT_YEAR = new Date().getFullYear()
 
 function Analytics() {
   const [proposals, setProposals] = useState([])
   const [loading, setLoading] = useState(false)
   const [statusFilter, setStatusFilter] = useState(null)
-  // default shows 2025 down to 2021; dropdown lets user include earlier years
-  const [selectedMinYear, setSelectedMinYear] = useState(2021)
+  // default range: from BASE_START_YEAR up to CURRENT_YEAR
+  const [selectedMinYear, setSelectedMinYear] = useState(BASE_START_YEAR)
+  const [selectedMaxYear, setSelectedMaxYear] = useState(CURRENT_YEAR)
   const chartRef = useRef(null)
   const chartInstanceRef = useRef(null)
   const pie1Ref = useRef(null)
@@ -54,7 +56,20 @@ function Analytics() {
     return { totalProposals, totalProjects, technicallyCompleted, financiallyCompleted, pendingProjects }
   }, [proposals])
 
-  const chartLabels = useMemo(() => AVAILABLE_YEARS.filter((y) => y >= selectedMinYear), [selectedMinYear])
+  const availableYears = useMemo(() => {
+    const maxYear = CURRENT_YEAR + 10
+    const years = []
+    for (let y = maxYear; y >= BASE_START_YEAR; y--) {
+      years.push(y)
+    }
+    return years
+  }, [])
+
+  const chartLabels = useMemo(() => {
+    const minY = Math.min(selectedMinYear, selectedMaxYear)
+    const maxY = Math.max(selectedMinYear, selectedMaxYear)
+    return availableYears.filter((y) => y >= minY && y <= maxY)
+  }, [availableYears, selectedMinYear, selectedMaxYear])
 
   const getProjectYear = (p) => {
     // prefer order_date, then technical_completed_year, then financial_completed_year, then created_at
@@ -159,7 +174,15 @@ function Analytics() {
   }, [proposals])
 
 
-  const MIN_YEAR_OPTIONS = AVAILABLE_YEARS.filter((y) => y <= 2021)
+  const MIN_YEAR_OPTIONS = useMemo(
+    () => availableYears.filter((y) => y <= CURRENT_YEAR),
+    [availableYears],
+  )
+
+  const MAX_YEAR_OPTIONS = useMemo(
+    () => availableYears.filter((y) => y >= CURRENT_YEAR),
+    [availableYears],
+  )
 
   useEffect(() => {
     if (!chartRef.current) return
@@ -322,10 +345,26 @@ function Analytics() {
           </div>
         </div>
 
-        <div className="flex justify-center mt-4 mb-6">
-          <Select value={selectedMinYear} onChange={(v) => setSelectedMinYear(Number(v))} size="large" style={{ width: 360 }}>
+        <div className="flex justify-center mt-4 mb-6 gap-4 flex-wrap">
+          <Select
+            value={selectedMinYear}
+            onChange={(v) => setSelectedMinYear(Number(v))}
+            size="large"
+            style={{ width: 260 }}
+          >
             {MIN_YEAR_OPTIONS.map((y) => (
               <Select.Option key={y} value={y}>{`Show ${y} and years below`}</Select.Option>
+            ))}
+          </Select>
+
+          <Select
+            value={selectedMaxYear}
+            onChange={(v) => setSelectedMaxYear(Number(v))}
+            size="large"
+            style={{ width: 260 }}
+          >
+            {MAX_YEAR_OPTIONS.map((y) => (
+              <Select.Option key={y} value={y}>{`Include up to year ${y}`}</Select.Option>
             ))}
           </Select>
         </div>
