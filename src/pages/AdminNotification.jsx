@@ -7,7 +7,7 @@ const AdminNotification = () => {
 
   useEffect(() => {
     axios
-      .get("http://172.18.100.160:8000/notifications/")
+      .get("http://10.1.1.13:8000/notifications/")
       .then((response) => {
         const filtered = response.data.filter(
           (n) => n.trigerred_by !== "admin" && n.is_read !== 1
@@ -19,7 +19,7 @@ const AdminNotification = () => {
 
   const markAsRead = (id) => {
     axios
-      .put(`http://172.18.100.160:8000/notifications/${id}`, { is_read: 1 })
+      .put(`http://10.1.1.13:8000/notifications/${id}`, { is_read: 1 })
       .then(() => {
         setNotifications(notifications.filter((n) => n.id !== id));
       })

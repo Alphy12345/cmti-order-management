@@ -51,7 +51,7 @@ function Sidebar() {
   const [notificationCount, setNotificationCount] = useState(0);
 
   useEffect(() => {
-    axios.get('http://172.18.100.160:8000/notifications/')
+    axios.get('http://10.1.1.13:8000/notifications/')
       .then(response => {
         const unreadCount = response.data.filter(notification => 
           notification.trigerred_by !== 'admin' && notification.is_read !== 1

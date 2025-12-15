@@ -40,7 +40,27 @@ const { Title } = Typography
 const { TextArea } = Input
 const { RangePicker } = DatePicker
 
-const API_BASE_URL = 'http://172.18.100.160:8000'
+const API_BASE_URL = 'http://10.1.1.13:8000'
+
+const CUSTOMER_TYPE_OPTIONS = [
+  'Govt',
+  'Private',
+  'MHI',
+  'MSME',
+  'Research Institute',
+  'Educational institute',
+]
+
+const REQUEST_TYPE_OPTIONS = [
+  'Call for Proposal',
+  'Mail',
+  'Discussion',
+  'Initiative',
+  'Tender',
+  'Direct Enquiry',
+  'Budgetry offer',
+  'EOI',
+]
 
 const PROPOSAL_FIELDS = [
   { name: 'id', label: 'ID (PK)', width: 120, fixed: 'left', inForm: false },
@@ -152,7 +172,9 @@ function Proposals() {
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
   const [proposalCount, setProposalCount] = useState(0)
-
+  const [centres, setCentres] = useState([])
+  const [groups, setGroups] = useState([])
+  const [selectedCentreId, setSelectedCentreId] = useState(null)
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -176,23 +198,56 @@ function Proposals() {
   }, [])
 
   const fetchProposalCount = useCallback(async () => {
-  try {
-    const response = await fetch(`${API_BASE_URL}/master_proposals/count`, {
-      headers: { accept: 'application/json' },
-    })
+    try {
+      const response = await fetch(`${API_BASE_URL}/master_proposals/count`, {
+        headers: { accept: 'application/json' },
+      })
 
-    if (!response.ok) {
-      throw new Error('Unable to fetch proposal count')
+      if (!response.ok) {
+        throw new Error('Unable to fetch proposal count')
+      }
+
+      const payload = await response.json() // { count: 742 }
+      setProposalCount(payload.count)
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to fetch proposal count')
     }
+  }, [])
 
-    const payload = await response.json()   // { count: 742 }
-    setProposalCount(payload.count)
-  } catch (error) {
-    console.error(error)
-    message.error(error.message || 'Unable to fetch proposal count')
-  }
-}, [])
+  const fetchCentres = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/centres/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) {
+        throw new Error('Unable to fetch centres')
+      }
+      const payload = await response.json()
+      const normalized = Array.isArray(payload) ? payload : []
+      setCentres(normalized)
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to fetch centres')
+    }
+  }, [])
 
+  const fetchGroups = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/groups/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) {
+        throw new Error('Unable to fetch groups')
+      }
+      const payload = await response.json()
+      const normalized = Array.isArray(payload) ? payload : []
+      setGroups(normalized)
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to fetch groups')
+    }
+  }, [])
 
   useEffect(() => {
     try {
@@ -209,7 +264,9 @@ function Proposals() {
 
     fetchProposals()
     fetchProposalCount()
-  }, [fetchProposals , fetchProposalCount])
+    fetchCentres()
+    fetchGroups()
+  }, [fetchProposals, fetchProposalCount, fetchCentres, fetchGroups])
 
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
@@ -217,6 +274,7 @@ function Proposals() {
     if (currentUserName) {
       form.setFieldsValue({ updated_by: currentUserName })
     }
+    setSelectedCentreId(null)
     setModalOpen(true)
   }, [form, currentUserName])
 
@@ -224,9 +282,20 @@ function Proposals() {
     (record) => {
       setEditingRecord(record)
       form.setFieldsValue({ ...record, updated_by: currentUserName || record.updated_by })
+
+      const centerCodeFromRecord = (record.center || '').trim()
+      if (centerCodeFromRecord) {
+        const matchedCentre = centres.find(
+          (c) => (c.code || '').trim() === centerCodeFromRecord,
+        )
+        setSelectedCentreId(matchedCentre ? matchedCentre.id : null)
+      } else {
+        setSelectedCentreId(null)
+      }
+
       setModalOpen(true)
     },
-    [form, currentUserName],
+    [form, currentUserName, centres],
   )
 
   const closeModal = useCallback(() => {
@@ -428,6 +497,26 @@ function Proposals() {
     ]
     return centers.sort()
   }, [tableData])
+
+  const centreCodeOptions = useMemo(
+    () =>
+      centres
+        .map((c) => (c.code || '').trim())
+        .filter((code) => code)
+        .sort(),
+    [centres],
+  )
+
+  const filteredGroups = useMemo(
+    () =>
+      groups.filter(
+        (g) =>
+          selectedCentreId == null
+            ? true
+            : Number(g.centre_id) === Number(selectedCentreId),
+      ),
+    [groups, selectedCentreId],
+  )
 
   // Export to Excel
   const handleExportExcel = () => {
@@ -1135,6 +1224,213 @@ function Proposals() {
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
+
+              if (field.name === 'customer_type') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                    >
+                      {CUSTOMER_TYPE_OPTIONS.map((option) => (
+                        <Select.Option key={option} value={option}>
+                          {option}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'request_type') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                    >
+                      {REQUEST_TYPE_OPTIONS.map((option) => (
+                        <Select.Option key={option} value={option}>
+                          {option}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'quotation_given_by_department') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                    >
+                      {centreCodeOptions.map((code) => (
+                        <Select.Option key={code} value={code}>
+                          {code}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'center') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                      onChange={(val) => {
+                        const value = Array.isArray(val)
+                          ? val[val.length - 1] || ''
+                          : val || ''
+                        form.setFieldsValue({ center: value, group: undefined })
+                        const matchedCentre = centres.find(
+                          (c) => (c.code || '').trim() === (value || '').trim(),
+                        )
+                        setSelectedCentreId(matchedCentre ? matchedCentre.id : null)
+                      }}
+                    >
+                      {centreCodeOptions.map((code) => (
+                        <Select.Option key={code} value={code}>
+                          {code}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'group') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please select ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                  >
+                    <Select allowClear disabled={!selectedCentreId}>
+                      {filteredGroups.map((group) => (
+                        <Select.Option key={group.id} value={group.name}>
+                          {group.name}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
               return (
                 <Form.Item
                   key={field.name}

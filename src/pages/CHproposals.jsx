@@ -40,7 +40,7 @@ const { Title } = Typography
 const { TextArea } = Input
 const { RangePicker } = DatePicker
 
-const API_BASE_URL = 'http://172.18.100.160:8000'
+const API_BASE_URL = 'http://10.1.1.13:8000'
 
 const PROPOSAL_FIELDS = [
   { name: 'id', label: 'ID (PK)', width: 120, fixed: 'left', inForm: false },
@@ -148,55 +148,56 @@ function Proposals() {
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
+  const [projectNumberFilter, setProjectNumberFilter] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
 
- const fetchProposals = useCallback(async () => {
-  setTableLoading(true)
+  const fetchProposals = useCallback(async () => {
+    setTableLoading(true)
 
-  let center = null
-  try {
-    const rawUser = window.localStorage.getItem('ppm_user')
-    if (rawUser) {
-      const parsedUser = JSON.parse(rawUser)
-      center = parsedUser?.center?.trim().toLowerCase() || null
-    }
-  } catch (err) {
-    console.error('Failed to parse ppm_user from localStorage', err)
-  }
-
-  if (!center) {
-    message.error('User center not found. Please log in again.')
-    setTableLoading(false)
-    return
-  }
-
-  try {
-    const response = await fetch(`${API_BASE_URL}/proposals/by-centre/${center}`, {
-      headers: { accept: 'application/json' },
-    })
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`Failed to fetch proposals for center "${center}": ${response.status} ${errorText}`)
+    let center = null
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        center = parsedUser?.center?.trim().toLowerCase() || null
+      }
+    } catch (err) {
+      console.error('Failed to parse ppm_user from localStorage', err)
     }
 
-    const payload = await response.json()
-    const normalized = Array.isArray(payload) ? payload.map(mapApiToUi) : []
-    setTableData(normalized)
-    setFilteredData(normalized)
-  } catch (error) {
-    console.error('Fetch proposals error:', error)
-    message.error(error.message || 'Unable to fetch proposals for your center')
-    setTableData([])
-    setFilteredData([])
-  } finally {
-    setTableLoading(false)
-  }
-}, [])
+    if (!center) {
+      message.error('User center not found. Please log in again.')
+      setTableLoading(false)
+      return
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/proposals/by-centre/${center}`, {
+        headers: { accept: 'application/json' },
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        throw new Error(`Failed to fetch proposals for center "${center}": ${response.status} ${errorText}`)
+      }
+
+      const payload = await response.json()
+      const normalized = Array.isArray(payload) ? payload.map(mapApiToUi) : []
+      setTableData(normalized)
+      setFilteredData(normalized)
+    } catch (error) {
+      console.error('Fetch proposals error:', error)
+      message.error(error.message || 'Unable to fetch proposals for your center')
+      setTableData([])
+      setFilteredData([])
+    } finally {
+      setTableLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
     try {
@@ -353,6 +354,16 @@ function Proposals() {
       filtered = filtered.filter((item) => item.center === centerFilter)
     }
 
+    // Project number prefix filter (GSP, ISP, GAP, ILP, DPP, LSP, CLP, SO)
+    if (projectNumberFilter) {
+      const prefix = projectNumberFilter.toUpperCase()
+      filtered = filtered.filter((item) => {
+        const pn = (item.project_number || '').toString().trim().toUpperCase()
+        if (!pn) return false
+        return pn.startsWith(prefix)
+      })
+    }
+
     // Order date filter
     if (orderDateRange && orderDateRange.length === 2) {
       filtered = filtered.filter((item) => {
@@ -412,7 +423,15 @@ function Proposals() {
     }
 
     setFilteredData(filtered)
-  }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, tableData])
+  }, [
+    searchText,
+    centerFilter,
+    orderDateRange,
+    enquiryDateRange,
+    statusFilter,
+    projectNumberFilter,
+    tableData,
+  ])
 
   // Get unique centers for filter
   const uniqueCenters = useMemo(() => {
@@ -779,12 +798,29 @@ function Proposals() {
                             setOrderDateRange(null)
                             setEnquiryDateRange(null)
                             setStatusFilter(null)
+                            setProjectNumberFilter(null)
                           }}
                           size="large"
                           style={{ width: '100%' }}
                         >
                           Clear Filters
                         </Button>
+                      </Col>
+                      <Col xs={24} sm={12} md={6}>
+                        <Select
+                          placeholder="Filter by Project Number"
+                          value={projectNumberFilter}
+                          onChange={setProjectNumberFilter}
+                          size="large"
+                          allowClear
+                          style={{ width: '100%' }}
+                        >
+                          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map((code) => (
+                            <Select.Option key={code} value={code}>
+                              {code}
+                            </Select.Option>
+                          ))}
+                        </Select>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <Select

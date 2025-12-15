@@ -67,7 +67,7 @@ const getProjectTheme = (projectNumber) => {
 }
 
 function Projects() {
-  const apiBase = 'http://172.18.100.160:8000'
+  const apiBase = 'http://10.1.1.13:8000'
   
   // Projects list state
   const [projectRows, setProjectRows] = useState([])
@@ -683,6 +683,7 @@ function Projects() {
 
   const [searchText, setSearchText] = useState('')
   const [selectedCenter, setSelectedCenter] = useState(undefined)   // “center” field in your project objects
+  const [projectNumberFilter, setProjectNumberFilter] = useState(undefined)
 
   // Extract unique centers-centers for the dropdown (you can adjust the field name if it’s different)
   const centerOptions = useMemo(() => {
@@ -693,7 +694,7 @@ function Projects() {
     return centers.sort().map(c => ({ label: c, value: c }))
   }, [projectRows])
 
-  // Filtered list (search + center)
+  // Filtered list (search + center + project number prefix)
   const filteredCards = useMemo(() => {
     return (projectRows || [])
       .filter(p => p?.project_number)                     // keep only projects that have a number
@@ -707,533 +708,28 @@ function Projects() {
           if (! (inNumber || inActivity || inCoord)) return false
         }
 
+        // Project number prefix filter (GSP, ISP, GAP, ILP, DPP, LSP, CLP, SO)
+        if (projectNumberFilter) {
+          const prefix = projectNumberFilter.toUpperCase()
+          const pn = (p.project_number || '').toString().trim().toUpperCase()
+          if (!pn || !pn.startsWith(prefix)) return false
+        }
+
         // Center filter
         if (selectedCenter && p.center?.trim() !== selectedCenter) return false
 
         return true
       })
-  }, [projectRows, searchText, selectedCenter])
+  }, [projectRows, searchText, selectedCenter, projectNumberFilter])
 
   // Clear all filters
   const handleClearFilters = () => {
     setSearchText('')
     setSelectedCenter(undefined)
+    setProjectNumberFilter(undefined)
   }
 
-  const getPaymentColumns = (stage) => [
-    { title: 'Inv #', dataIndex: 'invoice_no', width: 120 },
-    { title: 'Inv Date', dataIndex: 'invoice_date', width: 110 },
-    { title: 'Gross', dataIndex: 'gross_amount', width: 110 },
-    { title: 'Get Amount', dataIndex: 'get_amount', width: 110 },
-    { title: 'Amount Claimed', dataIndex: 'amount_claimed', width: 130 },
-    { title: 'Amount Received', dataIndex: 'amount_recieved', width: 130 },
-    { title: 'Received Date', dataIndex: 'recieved_date', width: 120 },
-    { title: 'TDS', dataIndex: 'tds', width: 90 },
-    { title: 'Get TDS', dataIndex: 'get_tds', width: 90 },
-    { title: 'LD', dataIndex: 'ld', width: 90 },
-    { title: 'Balance', dataIndex: 'bal', width: 90 },
-    { title: 'Status', dataIndex: 'follow_up_status', width: 150 },
-    {
-      title: 'Actions',
-      width: 120,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenPaymentModal(stage, record)}>Edit</Button>
-          <Popconfirm title="Delete payment?" onConfirm={() => handleDeletePayment(record.id)}>
-            <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ]
-
-  const formatDate = (date) => {
-    if (!date) return 'N/A'
-    const d = dayjs(date, ['DD/M/YY', 'DD/MM/YY', 'YYYY-MM-DD', dayjs.ISO_8601], true)
-    return d.isValid() ? d.format('DD-MMM-YYYY, hh:mm A') : date
-  }
-
-  const uploadProps = {
-    multiple: false,
-    maxCount: 1,
-    beforeUpload: (file) => {
-      setFileToUpload(file)
-      return false
-    },
-    onRemove: () => {
-      setFileToUpload(null)
-    },
-    fileList: fileToUpload ? [{
-      uid: fileToUpload.uid || fileToUpload.name,
-      name: fileToUpload.name,
-      status: 'done',
-      originFileObj: fileToUpload,
-    }] : [],
-  }
-
-  // Loading state
-  if (loading) {
-    return (
-      <div className="flex justify-center items-center min-h-screen">
-        <Spin size="large" tip="Loading projects..." />
-      </div>
-    )
-  }
-
-  // Project details view
-  if (selectedProject) {
-    const getAllotmentPaymentRow = (index) => {
-      if (!allotmentData || !Array.isArray(allotmentData.payments)) return {}
-      return allotmentData.payments[index] || {}
-    }
-
-    return (
-      <div className="rounded-3xl bg-white p-6 shadow-sm">
-        <div className="mb-6 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              icon={<ArrowLeftOutlined />}
-              onClick={handleBackToProjects}
-              size="large"
-            >
-              Back to Projects
-            </Button>
-            <div>
-              <Title level={3} className="!mb-0">
-                <FileTextOutlined /> Project {formatValue(selectedProject.project_number)}
-              </Title>
-              <Text type="secondary">{selectedProject.activity}</Text>
-            </div>
-          </div>
-        </div>
-
-        {loadingStages ? (
-          <div className="py-20 text-center">
-            <Spin size="large" tip="Loading stages..." />
-          </div>
-        ) : stageData.length === 0 ? (
-          <Empty description="No stages found" />
-        ) : (
-          <div className="space-y-8">
-            {stageData
-              .filter(stage => (stage.stage_name || '').trim().toLowerCase() !== 'dgdfh')
-              .map((stage) => {
-                const rawName = (stage.stage_name || '').trim()
-                const stageName = rawName
-                const stageNameLower = rawName.toLowerCase()
-                const hasDocs = Array.isArray(stage.documents) && stage.documents.length > 0
-                const hasProg = Array.isArray(stage.progress) && stage.progress.length > 0
-                const hasPay = Array.isArray(stage.payments) && stage.payments.length > 0
-                const accessList = getStageAccessList(stage)
-                const canUpload = accessList.includes('upload')
-                const canAddRemarks = accessList.includes('add remarks')
-                const canAddPayments = accessList.includes('add payments')
-                const canViewAllotment = accessList.includes('view allotment sheet')
-
-                return (
-                  <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
-                    <div className="flex justify-between items-center mb-5">
-                      <Title level={4} className="!mb-0">
-                        <Tag color="blue">{stage.stage_id}</Tag> {stageName || 'Stage'}
-                      </Title>
-                      {canUpload && (
-                        <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
-                          Upload
-                        </Button>
-                      )}
-                    </div>
-
-                    {hasDocs && (
-                      <div className="mb-6">
-                        <Text strong>Documents:</Text>
-                        <div className="grid gap-3 mt-3 md:grid-cols-2">
-                          {stage.documents.map((doc) => (
-                            <Card key={doc.id} size="small" className="border-l-4 border-l-blue-600">
-                              <Text strong>{doc.name}</Text>
-                              {doc.description && <Text type="secondary" className="block text-xs">{doc.description}</Text>}
-                              <div className="text-xs text-gray-500 mt-1">
-                                <UserOutlined /> {doc.uploaded_by || 'Unknown'} • <CalendarOutlined /> {formatDate(doc.updated_at)}
-                              </div>
-                              {doc.url ? (
-                                <Button type="link" size="small" icon={<LinkOutlined />} onClick={() => setViewDocumentUrl(doc.url)}>
-                                  View
-                                </Button>
-                              ) : null}
-                            </Card>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {canViewAllotment && (
-                      <div className="mb-6">
-                        <Card size="small" className="border-l-4 border-l-indigo-600">
-                          <div className="flex items-center justify-between">
-                            <Text strong>Allotment Sheet</Text>
-                            <Space>
-                              <Button
-                                size="small"
-                                type="primary"
-                                icon={<EyeOutlined />}
-                                onClick={() => handleOpenAllotmentModal(stage)}
-                              >
-                                View
-                              </Button>
-                              <Button
-                                size="small"
-                                onClick={() => handleDownloadAllotment('word')}
-                              >
-                                Download as Word
-                              </Button>
-                              <Button
-                                size="small"
-                                onClick={() => handleDownloadAllotment('pdf')}
-                              >
-                                Download as PDF
-                              </Button>
-                            </Space>
-                          </div>
-                        </Card>
-                      </div>
-                    )}
-
-                    <div className="mb-6">
-                      <div className="flex justify-between items-center mb-3">
-                        {canAddRemarks && (
-                          <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => handleOpenRemarksModal(stage)}>
-                            Add Remark
-                          </Button>
-                        )}
-                      </div>
-                      {hasProg && stage.progress.map((p) => (
-                        <Card key={p.id} size="small" className="mb-3 border-l-4 border-l-green-600">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <Text>{p.remarks}</Text>
-                              <Text type="secondary" className="block text-xs mt-1">
-                                {p.updated_by || 'Unknown'} • {formatDate(p.updated_at)}
-                              </Text>
-                            </div>
-                            <div>
-                              <Space>
-                                <Button size="small" icon={<EditOutlined />} onClick={() => handleEditRemark(stage, p)}>Edit</Button>
-                                <Popconfirm title="Delete remark?" onConfirm={() => handleDeleteRemark(p.id)}>
-                                  <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
-                                </Popconfirm>
-                              </Space>
-                            </div>
-                          </div>
-                        </Card>
-                      ))}
-                    </div>
-
-                    <div>
-                      <div className="flex justify-between items-center mb-3">
-                        {canAddPayments && (
-                          <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
-                            Add Payment
-                          </Button>
-                        )}
-                      </div>
-                      {hasPay && (
-                        <Table
-                          dataSource={stage.payments}
-                          columns={getPaymentColumns(stage)}
-                          pagination={false}
-                          size="small"
-                          scroll={{ x: 1400 }}
-                          rowKey="id"
-                        />
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-          </div>
-        )}
-
-        <Modal
-          title={<>{editingPayment ? 'Edit' : 'Add'} Payment - {selectedStageForPayment?.stage_name}</>}
-          open={paymentModalVisible}
-          onCancel={() => {
-            setPaymentModalVisible(false)
-            setEditingPayment(null)
-            paymentForm.resetFields()
-          }}
-          footer={null}
-          width={1000}
-        >
-          <Form form={paymentForm} layout="vertical" onFinish={handleSubmitPayment}>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <Form.Item label="Invoice No" name="invoice_no" rules={[{ required: true }]}>
-                <Input />
-              </Form.Item>
-              <Form.Item label="Invoice Date" name="invoice_date">
-                <DatePicker format="DD/M/YY" className="w-full" />
-              </Form.Item>
-              <Form.Item label="Gross Amount" name="gross_amount">
-                <Input />
-              </Form.Item>
-              <Form.Item label="Get Amount" name="get_amount">
-                <Input />
-              </Form.Item>
-              <Form.Item label="Amount Claimed" name="amount_claimed">
-                <Input />
-              </Form.Item>
-              <Form.Item label="Amount Received" name="amount_recieved">
-                <Input />
-              </Form.Item>
-              <Form.Item label="Received Date" name="recieved_date">
-                <DatePicker format="DD/M/YY" className="w-full" />
-              </Form.Item>
-              <Form.Item label="TDS" name="tds">
-                <Input />
-              </Form.Item>
-              <Form.Item label="Get TDS" name="get_tds">
-                <Input />
-              </Form.Item>
-              <Form.Item label="LD" name="ld">
-                <Input />
-              </Form.Item>
-              <Form.Item label="Balance" name="bal">
-                <Input />
-              </Form.Item>
-              <Form.Item label="Follow-up Status" name="follow_up_status">
-                <Input />
-              </Form.Item>
-            </div>
-
-            <div className="flex justify-end gap-3 mt-6">
-              <Button onClick={() => {
-                setPaymentModalVisible(false)
-                setEditingPayment(null)
-                paymentForm.resetFields()
-              }}>Cancel</Button>
-              <Button type="primary" htmlType="submit" loading={submittingPayment}>
-                {editingPayment ? 'Update' : 'Add'} Payment
-              </Button>
-            </div>
-          </Form>
-        </Modal>
-
-        <Modal
-          title={`Upload Document - ${selectedStageForUpload?.stage_name}`}
-          open={uploadModalVisible}
-          onCancel={handleCloseUploadModal}
-          footer={[
-            <Button key="cancel" onClick={handleCloseUploadModal}>Cancel</Button>,
-            <Button key="upload" type="primary" loading={uploading} onClick={handleUpload}>Upload</Button>
-          ]}
-          width={600}
-        >
-          <Space direction="vertical" size="large" className="w-full">
-            <Dragger {...uploadProps}>
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p className="ant-upload-text">Click or drag file to this area</p>
-            </Dragger>
-            <Input placeholder="Document Name *" value={documentName} disabled />
-            <TextArea placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-            <Input placeholder="Your Name *" value={uploadedBy} disabled />
-          </Space>
-        </Modal>
-
-        <Modal
-          title={`${editingRemark ? 'Edit' : 'Add'} Remark - ${selectedStageForRemarks?.stage_name}`}
-          open={remarksModalVisible}
-          onCancel={() => {
-            setRemarksModalVisible(false)
-            setEditingRemark(null)
-            setRemarksText('')
-            setRemarksBy('')
-          }}
-          footer={[
-            <Button key="cancel" onClick={() => {
-              setRemarksModalVisible(false)
-              setEditingRemark(null)
-              setRemarksText('')
-              setRemarksBy('')
-            }}>Cancel</Button>,
-            <Button key="submit" type="primary" loading={submittingRemarks} onClick={handleSubmitRemarks}>
-              {editingRemark ? 'Update' : 'Submit'}
-            </Button>
-          ]}
-          width={600}
-        >
-          <Space direction="vertical" size="large" className="w-full">
-            <TextArea placeholder="Enter your remarks *" value={remarksText} onChange={(e) => setRemarksText(e.target.value)} rows={4} />
-            <Input placeholder="Your Name *" value={remarksBy} onChange={(e) => setRemarksBy(e.target.value)} />
-          </Space>
-        </Modal>
-
-        <Modal
-          title="Document Viewer"
-          open={!!viewDocumentUrl}
-          onCancel={() => setViewDocumentUrl(null)}
-          footer={null}
-          width={1100}
-        >
-          <iframe src={viewDocumentUrl} className="w-full h-[80vh]" title="Document" />
-        </Modal>
-
-        <Modal
-          title={`Allotment Sheet - ${selectedStageForAllotment?.stage_name || ''}`}
-          open={allotmentModalVisible}
-          onCancel={handleCloseAllotmentModal}
-          footer={null}
-          width={900}
-        >
-          <div className="bg-white text-black p-8 max-h-[80vh] overflow-auto">
-            <div className="text-center mb-8">
-              <h2 className="text-xl font-semibold">PP &amp; BD DEPT</h2>
-            </div>
-
-            {loadingAllotment && (
-              <div className="py-10 text-center text-slate-500">Loading allotment sheet...</div>
-            )}
-
-            {!loadingAllotment && (
-              <>
-
-                <div className="flex justify-between mb-2">
-                  <div>
-                    <span className="mr-2 font-semibold">Released to C -</span>
-                    <span className="mr-2 font-semibold">
-                      {allotmentData?.center || ''}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="mr-2 font-semibold">Date:</span>
-                    <span className="mr-2 font-semibold">
-                      {allotmentData?.order_date || ''}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mb-1">
-                  <div className=" inline-block px-4 py-1 font-semibold">
-                    {allotmentData?.activity || 'Project Name'}
-                  </div>
-                </div>
-
-                <div className="space-y-2 mb-8 text-sm">
-                  <div>
-                    <span className="font-semibold mr-2">Customer:</span>
-                    <span className="inline-block min-w-[300px] align-middle">
-                      {`${allotmentData?.party_name || ''}${
-                        allotmentData?.address ? ', ' + allotmentData.address : ''
-                      }`}
-                    </span>
-                  </div>
-
-
-                  <div>
-                    <span className="font-semibold mr-2">Contact Person:</span>
-                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email ||''} </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold mr-2">Project Co-ordinator:</span>
-                    <span className="inline-block min-w-[300px]  align-middle">
-                      {allotmentData?.project_co_ordinator || ''}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold mr-2">Email &amp; Contact details:</span>
-                    <span className="inline-block min-w-[300px]  align-middle">
-                      
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold mr-2">Project Number:</span>
-                    <span className="inline-block min-w-[300px] font-semibold align-middle">
-                      {allotmentData?.project_number || ''}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold mr-2">Project Name:</span>
-                    <span className="inline-block min-w-[300px] font-semibold  align-middle">
-                      {allotmentData?.activity || ''}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold mr-2">Order Value:</span>
-                    <span className="inline-block min-w-[300px]  align-middle">
-                      {allotmentData?.order_value || ''}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold mr-2">Purchase order No:</span>
-                    <span className="inline-block min-w-[300px]  align-middle">
-                      {allotmentData?.order_number || ''}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="font-semibold mr-2">Delivery date:</span>
-                    <span className="inline-block min-w-[300px]  align-middle">
-                      {allotmentData?.delivery_date || ''}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="mb-8">
-                  <table className="w-full border border-black text-xs">
-                    <thead>
-                      <tr>
-                        <th className="border border-black px-2 py-1 text-left">Full / Stage Payment</th>
-                        <th className="border border-black px-2 py-1 text-left">Invoice No and Amount</th>
-                        <th className="border border-black px-2 py-1 text-left">Invoice Date</th>
-                        <th className="border border-black px-2 py-1 text-left">Payment Received</th>
-                        <th className="border border-black px-2 py-1 text-left">Payment Received Date</th>
-                        <th className="border border-black px-2 py-1 text-left">Balance amount and remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allotmentData?.payments && Array.isArray(allotmentData.payments) && allotmentData.payments.length > 0 ? (
-                        allotmentData.payments.map((row, idx) => (
-                          <tr key={row.id || idx}>
-                            <td className="border border-black px-2 py-1"></td>
-                            <td className="border border-black px-2 py-1">{row.invoice_no || ''}</td>
-                            <td className="border border-black px-2 py-1">{row.invoice_date || ''}</td>
-                            <td className="border border-black px-2 py-1">{row.amount_recieved || ''}</td>
-                            <td className="border border-black px-2 py-1">{row.recieved_date || ''}</td>
-                            <td className="border border-black px-2 py-1">{row.bal || ''}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan="6" className="border border-black px-2 py-1 text-center text-gray-500">
-                            No payment records available
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="flex justify-between items-start text-sm mt-8">
-                  <div>
-                    <div className="font-semibold mb-6">Copy to:</div>
-                    <div className="inline-flex [column-gap:8.5rem]">
-                      <span style={{marginLeft:'10px'}}>GH (P&S)</span>
-                      <span>Sr. CAO</span>
-                      <span>GH (C-{allotmentData?.center || ''})</span>
-                      <span>CH (C-{allotmentData?.center || ''})</span>
-                    </div>
-
-                  </div>
-                  <div className="text-right font-semibold">CH (PP&amp;BD)</div>
-                </div>
-                <div className="mt-4 font-semibold">Director: For kind information</div>
-
-
-              </>
-            )}
-          </div>
-        </Modal>
-
-      </div>
-    )
-  }
+  // ...
 
   // Projects list view
   return (
@@ -1262,7 +758,22 @@ function Projects() {
           onChange={setSelectedCenter}
         />
 
-        {(searchText || selectedCenter) && (
+        <Select
+          placeholder="Filter by Project Number"
+          allowClear
+          size="large"
+          style={{ width: 240 }}
+          value={projectNumberFilter}
+          onChange={setProjectNumberFilter}
+        >
+          {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map(code => (
+            <Select.Option key={code} value={code}>
+              {code}
+            </Select.Option>
+          ))}
+        </Select>
+
+        {(searchText || selectedCenter || projectNumberFilter) && (
           <Button type="default" size="large" onClick={handleClearFilters}>
             Clear Filters
           </Button>
