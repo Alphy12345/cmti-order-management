@@ -7,7 +7,6 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
-    designation = Column(String, nullable=True)
     role = Column(String, nullable=True)
     center = Column(String, nullable=True)
     group = Column(String, nullable=True)

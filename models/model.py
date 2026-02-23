@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, func , Boolean , TIMESTAMP
 from sqlalchemy.orm import relationship
 from db import Base
 
@@ -12,6 +12,7 @@ class Proposal(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     enquiry_date = Column(String, nullable=True)
     customer_type = Column(String, nullable=True)
+    customer_name = Column(String , nullable= True)
     address = Column(String, nullable=True)
     email = Column(String, nullable=True)
     phone_no = Column(String, nullable=True)
@@ -54,6 +55,7 @@ class Proposal(Base):
     updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     group = Column(String, nullable=True)
+    is_acknowledged = Column(Boolean , nullable= True)
 
 
     # Child relationships
@@ -195,4 +197,37 @@ class Notification(Base):
     related_document_id = Column(Integer, ForeignKey("documents.id", ondelete="CASCADE"), nullable=True)
 
     created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    trigerred_by = Column(String , nullable = True)
 
+# -------------------------------------------------
+# MASTER PROPOSAL TABLE
+# -------------------------------------------------
+class MasterProposal(Base):
+    __tablename__ = "master_proposals"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    quote_date = Column(String, nullable=True)
+    customer_name = Column(String, nullable=True)
+    description = Column(String, nullable=True)
+    quote_amt = Column(String, nullable=True)
+    reference = Column(String, nullable=True)
+    quotation_ref = Column(String, nullable=True)
+    indentor = Column(String, nullable=True)
+    department = Column(String, nullable=True)
+    contact_details = Column(String, nullable=True)
+    order_number = Column(String, nullable=True)
+    date = Column(String, nullable=True)
+    amount = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+
+class OTP(Base):
+    __tablename__ = 'otp'
+
+    id = Column(Integer, primary_key=True)
+    email = Column(String)
+    otp_code = Column(String)
+    created_at = Column(TIMESTAMP(timezone=False), default=func.now())
+    expires_at = Column(TIMESTAMP(timezone=False))
+    is_used = Column(Boolean, default=False)

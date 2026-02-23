@@ -2,14 +2,16 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func , desc , or_
 
 from db import get_db
-from models.model import Document, Payment, Progress, Proposal, Stage
+from models.model import Document, Payment, Progress, Proposal, Stage , MasterProposal
 from pydantic_schema.request import (
     ProposalCreate,
     ProposalUpdate,
-    CoordinatorUpdate
+    CoordinatorUpdate,
+    ProposalCoordinatorCreate , 
+    AcknowledgeUpdate
 )
 from typing import List as ListType
 from fastapi.encoders import jsonable_encoder
@@ -31,6 +33,8 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
     except AttributeError:
         data = payload.model_dump(exclude_unset=True, by_alias=False)
 
+    data["is_acknowledged"] = True
+
     if getattr(payload, "revised_negotiated", None) is not None:
         data["revised_negotiated"] = payload.revised_negotiated
     if getattr(payload, "revised_negotiated_quote_date", None) is not None:
@@ -43,11 +47,28 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
     db.commit()
     db.refresh(proposal)
 
+    master_proposal_data = {
+        "quote_date": proposal.quote_date,
+        "customer_name": proposal.customer_name,
+        "description": proposal.quote_description,
+        "quote_amt": proposal.quote_amount,
+        "reference": proposal.email_reference,
+        "quotation_ref": proposal.quote_reference,
+        "indentor": proposal.quotation_given_by_name,
+        "department": proposal.quotation_given_by_department,
+        "contact_details": proposal.email
+    }
+    
+    master_proposal = MasterProposal(**master_proposal_data)
+    db.add(master_proposal)
+    db.commit()
+
     create_notification(
     db=db,
     user_name="admin",
-    message=f"New proposal created: ID {proposal.id}",
-    proposal_id=proposal.id
+    message=f"New proposal created: {proposal.customer_name} , {proposal.quote_description}",
+    proposal_id=proposal.id,
+    trigerred_by = "admin"
 )
 
     return proposal
@@ -58,7 +79,60 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
 # ------------------------------
 @router.get("/", response_model=List[ProposalResponse])
 def list_proposals(db: Session = Depends(get_db)) -> List[ProposalResponse]:
-    return db.query(Proposal).all()
+    return db.query(Proposal).filter(Proposal.is_acknowledged == True).order_by(desc(Proposal.id)).all()
+
+@router.get("/false", response_model=List[ProposalResponse])
+def list_proposals(db: Session = Depends(get_db)) -> List[ProposalResponse]:
+    return db.query(Proposal).filter(Proposal.is_acknowledged == None).order_by(desc(Proposal.id)).all()
+
+
+@router.get("/payments")
+def get_proposals_with_payments(db: Session = Depends(get_db)):
+    """
+    Get all proposals with their associated payments.
+    
+    Returns:
+        List of proposals with their payment details
+    """
+    proposals = db.query(Proposal).all()
+    
+    result = []
+    for proposal in proposals:
+        # Get all payments for this proposal
+        payments = db.query(Payment).filter(
+            Payment.project_id == proposal.id
+        ).all()
+        
+        # Serialize proposal data
+        proposal_data = {
+            key: value
+            for key, value in proposal.__dict__.items()
+            if not key.startswith("_")
+        }
+        
+        # Serialize payments data
+        payments_data = []
+        for payment in payments:
+            payment_dict = {
+                key: value
+                for key, value in payment.__dict__.items()
+                if not key.startswith("_")
+            }
+            
+            # Add stage name if stage_id exists
+            if payment.stage_id:
+                stage = db.query(Stage).filter(Stage.id == payment.stage_id).first()
+                payment_dict["stage_name"] = stage.name if stage else None
+            else:
+                payment_dict["stage_name"] = None
+                
+            payments_data.append(payment_dict)
+        
+        # Combine proposal with its payments
+        proposal_data["payments"] = payments_data
+        result.append(proposal_data)
+    
+    return result
 
 
 # ------------------------------
@@ -67,17 +141,28 @@ def list_proposals(db: Session = Depends(get_db)) -> List[ProposalResponse]:
 @router.get("/by-name/{name}", response_model=List[ProposalResponse])
 def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
 
-    proposals = db.query(Proposal).filter(
-        func.lower(Proposal.project_co_ordinator) == name.lower()
-    ).all()
+    name_lower = name.lower()
+
+    proposals = (
+        db.query(Proposal)
+        .filter(
+            or_(
+                func.lower(Proposal.quotation_given_by_name) == name_lower,
+                func.lower(Proposal.project_co_ordinator) == name_lower
+            ) , Proposal.is_acknowledged == True
+        )
+        .distinct(Proposal.id)   # ensure unique results by ID
+        .all()
+    )
 
     if not proposals:
         raise HTTPException(
             status_code=404,
-            detail=f"No proposals found for project_co_ordinator = '{name}'"
+            detail=f"No proposals found for '{name}' in quotation_given_by_name OR project_co_ordinator"
         )
 
     return proposals
+
 
 
 # ------------------------------
@@ -125,7 +210,8 @@ def update_proposal(
     db=db,
     user_name="admin",
     message=f"Proposal ID {proposal.id} updated",
-    proposal_id=proposal.id
+    proposal_id=proposal.id,
+    trigerred_by = "admin"
 )
     return proposal
 
@@ -191,7 +277,8 @@ def coordinator_update(payload: CoordinatorUpdate, db: Session = Depends(get_db)
     db=db,
     user_name=payload.updated_by,
     message=f"Coordinator updated proposal ID {proposal.id}",
-    proposal_id=proposal.id
+    proposal_id=proposal.id,
+    trigerred_by= "Coordinator"
 )
 
     return {
@@ -363,7 +450,7 @@ def get_proposals_by_centre(centre: str, db: Session = Depends(get_db)):
         List of proposals for the specified centre
     """
     proposals = db.query(Proposal).filter(
-        func.lower(Proposal.center) == centre.lower()
+        func.lower(Proposal.center) == centre.lower() , Proposal.is_acknowledged == True
     ).all()
 
     if not proposals:
@@ -373,3 +460,143 @@ def get_proposals_by_centre(centre: str, db: Session = Depends(get_db)):
         )
 
     return proposals
+
+
+
+@router.get("/payments/{proposal_id}")
+def get_proposal_with_payments(proposal_id: int, db: Session = Depends(get_db)):
+    """
+    Get a single proposal with its associated payments.
+    
+    Args:
+        proposal_id: The proposal ID
+        db: Database session
+        
+    Returns:
+        Proposal with payment details
+    """
+    proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+    
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+    
+    # Get all payments for this proposal
+    payments = db.query(Payment).filter(
+        Payment.project_id == proposal_id
+    ).all()
+    
+    # Serialize proposal data
+    proposal_data = {
+        key: value
+        for key, value in proposal.__dict__.items()
+        if not key.startswith("_")
+    }
+    
+    # Serialize payments data
+    payments_data = []
+    for payment in payments:
+        payment_dict = {
+            key: value
+            for key, value in payment.__dict__.items()
+            if not key.startswith("_")
+        }
+        
+        # Add stage name if stage_id exists
+        if payment.stage_id:
+            stage = db.query(Stage).filter(Stage.id == payment.stage_id).first()
+            payment_dict["stage_name"] = stage.name if stage else None
+        else:
+            payment_dict["stage_name"] = None
+            
+        payments_data.append(payment_dict)
+    
+    # Combine proposal with its payments
+    proposal_data["payments"] = payments_data
+    
+    return proposal_data
+
+
+@router.post("/add-proposal-coordinator", status_code=status.HTTP_201_CREATED)
+def add_proposal_coordinator(
+    payload: ProposalCoordinatorCreate,
+    db: Session = Depends(get_db)
+):
+    try:
+        data = payload.dict(exclude_unset=True)
+    except AttributeError:
+        data = payload.model_dump(exclude_unset=True)
+
+    # Create Proposal
+    proposal = Proposal(**data)
+    db.add(proposal)
+    db.commit()
+    db.refresh(proposal)
+    # ------------------------------------------
+    # Optional: Send Notification
+    # ------------------------------------------
+    create_notification(
+        db=db,
+        user_name=proposal.quotation_given_by_name,
+        message=f"Coordinator created proposal for {proposal.customer_name}",
+        proposal_id=proposal.id,
+        trigerred_by="Coordinator"
+    )
+
+    return {
+        "message": "Proposal created successfully by coordinator",
+        "proposal_id": proposal.id,
+        "data": data
+    }
+
+
+@router.put("/acknowledge/{proposal_id}")
+def update_acknowledgement(
+    proposal_id: int,
+    payload: AcknowledgeUpdate,
+    db: Session = Depends(get_db)
+):
+    proposal = db.query(Proposal).filter(Proposal.id == proposal_id).first()
+
+    if not proposal:
+        raise HTTPException(status_code=404, detail="Proposal not found")
+
+    # Update only acknowledgement
+    proposal.is_acknowledged = payload.is_acknowledged
+    db.commit()
+    db.refresh(proposal)
+
+    # Create notification
+    status_text = "Accepted" if payload.is_acknowledged else "Rejected"
+    create_notification(
+        db=db,
+        user_name="admin",
+        message=f"Proposal {proposal.customer_name} - {proposal.quote_description} marked as {status_text}",
+        proposal_id=proposal.id,
+        trigerred_by="admin"
+    )
+
+    # If acknowledged, insert into master proposals
+    if payload.is_acknowledged:
+        master_proposal_data = {
+            "quote_date": proposal.quote_date,
+            "customer_name": proposal.customer_name,
+            "description": proposal.quote_description,
+            "quote_amt": proposal.quote_amount,
+            "reference": proposal.email_reference,
+            "quotation_ref": proposal.quote_reference,
+            "indentor": proposal.quotation_given_by_name,
+            "department": proposal.quotation_given_by_department,
+            "contact_details": proposal.email
+        }
+
+        master_proposal = MasterProposal(**master_proposal_data)
+        db.add(master_proposal)
+        db.commit()
+
+    return {
+        "message": "Acknowledgement updated successfully",
+        "proposal_id": proposal.id,
+        "is_acknowledged": proposal.is_acknowledged
+    }
+
+    

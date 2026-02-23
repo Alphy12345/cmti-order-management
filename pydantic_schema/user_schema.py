@@ -4,7 +4,6 @@ from typing import Optional
 class UserCreate(BaseModel):
     name: str
     email: EmailStr
-    designation: Optional[str] = None
     role: Optional[str] = None
     center: Optional[str] = None
     group: Optional[str] = None
@@ -18,10 +17,10 @@ class UserResponse(BaseModel):
     id: int
     name: str
     email: EmailStr
-    designation: Optional[str]
     role: Optional[str]
     center: Optional[str]
     group: Optional[str]
+    password: Optional[str]
 
     class Config:
         orm_mode = True

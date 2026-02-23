@@ -1,0 +1,10 @@
+fastapi
+starlette
+sqlalchemy
+pydantic
+pydantic[email]
+minio
+psycopg2-binary
+uvicorn[standard]
+python-multipart
+

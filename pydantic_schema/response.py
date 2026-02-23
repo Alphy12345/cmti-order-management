@@ -11,6 +11,7 @@ class ProposalResponse(BaseModel):
     id: int
     enquiry_date: Optional[str] = None
     customer_type: Optional[str] = None
+    customer_name: Optional[str] = None
     address: Optional[str] = None
     email: Optional[str] = None
     phone_no: Optional[str] = None
@@ -61,6 +62,7 @@ class ProposalResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     group: Optional[str] = None
+    is_acknowledged: Optional[bool] = None
 
 
     class Config:

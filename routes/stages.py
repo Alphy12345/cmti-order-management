@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -50,7 +50,7 @@ def get_stage(stage_id: int, db: Session = Depends(get_db)) -> StageResponse:
 
 
 # ---------------------------------------
-# UPDATE — HANDLE REORDERING
+# UPDATE — HANDLE REORDERING AND ALL FIELDS
 # ---------------------------------------
 @router.put("/{stage_id}", response_model=StageResponse)
 def update_stage(stage_id: int, payload: StageUpdate, db: Session = Depends(get_db)) -> StageResponse:
@@ -65,25 +65,40 @@ def update_stage(stage_id: int, payload: StageUpdate, db: Session = Depends(get_
         new_pos = update_data["position"]
         old_pos = stage.position
 
-        if new_pos < old_pos:
-            # Move others down
-            db.query(Stage).filter(
-                Stage.position >= new_pos,
-                Stage.position < old_pos,
-            ).update({Stage.position: Stage.position + 1}, synchronize_session=False)
+        if new_pos != old_pos:
+            if new_pos < old_pos:
+                # Move others down
+                db.query(Stage).filter(
+                    Stage.id != stage_id,
+                    Stage.position >= new_pos,
+                    Stage.position < old_pos,
+                ).update({Stage.position: Stage.position + 1}, synchronize_session=False)
 
-        elif new_pos > old_pos:
-            # Move others up
-            db.query(Stage).filter(
-                Stage.position > old_pos,
-                Stage.position <= new_pos,
-            ).update({Stage.position: Stage.position - 1}, synchronize_session=False)
+            elif new_pos > old_pos:
+                # Move others up
+                db.query(Stage).filter(
+                    Stage.id != stage_id,
+                    Stage.position > old_pos,
+                    Stage.position <= new_pos,
+                ).update({Stage.position: Stage.position - 1}, synchronize_session=False)
 
-        stage.position = new_pos
+    # Handle access field specially if it's a list
+    if "access" in update_data:
+        access_value = update_data["access"]
+        # If access is a list, join it with commas or store as JSON
+        if isinstance(access_value, list):
+            # Option 1: Store as comma-separated string
+            stage.access = ",".join(access_value)
+            # Option 2: Store as JSON string (uncomment if preferred)
+            # import json
+            # stage.access = json.dumps(access_value)
+        else:
+            stage.access = access_value
+        update_data.pop("access")  # Remove it so setattr doesn't override
 
-    # Update name if present
-    if "name" in update_data:
-        stage.name = update_data["name"]
+    # Update all other fields dynamically
+    for field, value in update_data.items():
+        setattr(stage, field, value)
 
     db.commit()
     db.refresh(stage)

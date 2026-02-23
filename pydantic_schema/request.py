@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 class ProposalBase(BaseModel):
     enquiry_date: Optional[str] = None
     customer_type: Optional[str] = None
+    customer_name: Optional[str] = None
     address: Optional[str] = None
     email: Optional[str] = None
     phone_no: Optional[str] = None
@@ -140,3 +141,30 @@ class ProgressCreate(ProgressBase):
 
 class ProgressUpdate(ProgressBase):
     pass
+
+
+class ProposalCoordinatorCreate(BaseModel):
+    enquiry_date: Optional[str] = None
+    customer_type: Optional[str] = None
+    customer_name: Optional[str] = None
+    address: Optional[str] = None
+    email: Optional[str] = None
+    phone_no: Optional[str] = None
+    alternate_contact_details: Optional[str] = None
+    request_type: Optional[str] = None
+    email_reference: Optional[str] = None
+    quote_reference: Optional[str] = None
+    quote_description: Optional[str] = None
+    quote_date: Optional[str] = None
+    quote_amount: Optional[str] = None
+
+    revised_negotiated: Optional[str] = None
+    revised_negotiated_quote_date: Optional[str] = None
+    revised_negotiated_quote_amount: Optional[str] = None
+
+    quotation_given_by_name: Optional[str] = None
+    quotation_given_by_department: Optional[str] = None
+
+
+class AcknowledgeUpdate(BaseModel):
+    is_acknowledged: bool
