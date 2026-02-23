@@ -4,6 +4,7 @@ import Proposals from './pages/Proposals'
 import Analytics from './pages/Analytics'
 import Configuration from './pages/Configuration'
 import Projects from './pages/Projects'
+import MasterProposals from './pages/MasterProposals'
 import GHProposals from './pages/GHproposals'
 import GHProjects from './pages/GHprojects'
 import CHProposals from './pages/CHproposals'
@@ -13,6 +14,10 @@ import CreateLogin from './pages/CreateLogin'
 import Sidebar from './components/Sidebar'
 
 import './App.css'
+import AdminNotification from './pages/AdminNotification'
+import GhMasterProposals from './pages/GhMasterProposals'
+import GhNotification from './pages/GhNotification'
+import UserAccess from './pages/AccessControl'
 
 const { Content } = Layout
 
@@ -49,8 +54,8 @@ function RoleProtectedLayout({ basePath }) {
   const user = getStoredUser()
   const userRole = (user?.role || '').toLowerCase()
 
-  // Normalize role: only allow 'admin', 'gh', 'ch' — default to 'gh' if unknown
-  const normalizedRole = ['admin', 'gh', 'ch'].includes(userRole) ? userRole : 'gh'
+  // Normalize role: only allow 'admin', 'gh', 'ch', 'scientist' — default to 'gh' if unknown
+  const normalizedRole = ['admin', 'gh', 'ch', 'scientist'].includes(userRole) ? userRole : 'gh'
 
   // If user is trying to access a base path that doesn't match their role → redirect
   if (normalizedRole !== basePath) {
@@ -69,6 +74,10 @@ function RoleProtectedLayout({ basePath }) {
   } else if (normalizedRole === 'ch') {
     ProposalsComponent = CHProposals
     ProjectsComponent = CHProjects
+  } else if (normalizedRole === 'scientist') {
+    // Scientist uses same components as GH
+    ProposalsComponent = GHProposals
+    ProjectsComponent = GHProjects
   }
   // 'gh' already set as default above
 
@@ -85,12 +94,22 @@ function RoleProtectedLayout({ basePath }) {
         >
           <Routes>
             <Route path="proposals" element={<ProposalsComponent />} />
+            {isAdmin && (
+              <Route path="master-proposals" element={<MasterProposals />} />
+            )}
             <Route path="analytics" element={<Analytics />} />
             <Route path="projects" element={<ProjectsComponent />} />
 
+            <Route path='gh-master-proposals' element={<GhMasterProposals/>}/>
+            <Route path='gh-notification' element={<GhNotification/>}/>
+
             {/* Only admins can access configuration */}
             {isAdmin && (
+              <>
               <Route path="configuration" element={<Configuration />} />
+              <Route path="notification" element={<AdminNotification />} />
+              <Route path="access-control" element={<UserAccess/>}/>
+              </>
             )}
 
             {/* Catch-all: redirect to proposals */}
@@ -115,6 +134,7 @@ function App() {
           <Route path="/admin/*" element={<RoleProtectedLayout basePath="admin" />} />
           <Route path="/gh/*" element={<RoleProtectedLayout basePath="gh" />} />
           <Route path="/ch/*" element={<RoleProtectedLayout basePath="ch" />} />
+          <Route path="/scientist/*" element={<RoleProtectedLayout basePath="scientist" />} />
 
           {/* Fallback: any unknown route → login */}
           <Route path="*" element={<Navigate to="/" replace />} />

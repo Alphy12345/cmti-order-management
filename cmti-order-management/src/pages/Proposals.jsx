@@ -42,10 +42,31 @@ const { RangePicker } = DatePicker
 
 const API_BASE_URL = 'http://172.18.100.160:8000'
 
+const CUSTOMER_TYPE_OPTIONS = [
+  'Govt',
+  'Private',
+  'MHI',
+  'MSME',
+  'Research Institute',
+  'Educational institute',
+]
+
+const REQUEST_TYPE_OPTIONS = [
+  'Call for Proposal',
+  'Mail',
+  'Discussion',
+  'Initiative',
+  'Tender',
+  'Direct Enquiry',
+  'Budgetry offer',
+  'EOI',
+]
+
 const PROPOSAL_FIELDS = [
-  { name: 'id', label: 'Sl NO', width: 120, fixed: 'left', inForm: false ,render: (_, __, index) => index + 1,},
+  { name: 'id', label: 'SL NO', width: 120, fixed: 'left', inForm: false , render: (text, record, index) => index + 1,},
   { name: 'enquiry_date', label: 'Enquiry Date', width: 150 },
   { name: 'customer_type', label: 'Customer Type', width: 170 },
+  { name: 'customer_name', label: 'Customer Name', width: 170 },
   { name: 'address', label: 'Address', width: 240 },
   { name: 'email', label: 'Email', width: 200 },
   { name: 'phone_no', label: 'Phone No.', width: 150 },
@@ -64,8 +85,8 @@ const PROPOSAL_FIELDS = [
   { name: 'revised_negotiated', label: 'Revised / Negotiated', width: 190, apiName: 'revised/negotiated' },
   { name: 'revised_negotiated_quote_date', label: 'Revised Quote Date', width: 190, apiName: 'revised/negotiated_quote_date' },
   { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
-  { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
   { name: 'quotation_given_by_department', label: 'Department', width: 180 },
+  { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -77,8 +98,9 @@ const PROPOSAL_FIELDS = [
   { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 210 },
   { name: 'order_value', label: 'Order Value', width: 170 },
   { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260, input: 'textarea' },
-  { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'center', label: 'Center', width: 150 },
+  { name: 'group', label: 'Group', width: 150 },
+  { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
   { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
@@ -88,7 +110,6 @@ const PROPOSAL_FIELDS = [
   { name: 'created_at', label: 'Created At', width: 190, inForm: false },
   { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
   { name: 'updated_by', label: 'Updated By', width: 150, required: true },
-  { name: 'group', label: 'Group', width: 150 },
 ]
 
 const FORM_FIELDS = PROPOSAL_FIELDS.filter((field) => field.inForm !== false)
@@ -151,6 +172,10 @@ function Proposals() {
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [proposalCount, setProposalCount] = useState(0)
+  const [centres, setCentres] = useState([])
+  const [groups, setGroups] = useState([])
+  const [selectedCentreId, setSelectedCentreId] = useState(null)
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -173,6 +198,58 @@ function Proposals() {
     }
   }, [])
 
+  const fetchProposalCount = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/master_proposals/count`, {
+        headers: { accept: 'application/json' },
+      })
+
+      if (!response.ok) {
+        throw new Error('Unable to fetch proposal count')
+      }
+
+      const payload = await response.json() // { count: 742 }
+      setProposalCount(payload.count)
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to fetch proposal count')
+    }
+  }, [])
+
+  const fetchCentres = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/centres/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) {
+        throw new Error('Unable to fetch centres')
+      }
+      const payload = await response.json()
+      const normalized = Array.isArray(payload) ? payload : []
+      setCentres(normalized)
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to fetch centres')
+    }
+  }, [])
+
+  const fetchGroups = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/groups/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) {
+        throw new Error('Unable to fetch groups')
+      }
+      const payload = await response.json()
+      const normalized = Array.isArray(payload) ? payload : []
+      setGroups(normalized)
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to fetch groups')
+    }
+  }, [])
+
   useEffect(() => {
     try {
       const rawUser = window.localStorage.getItem('ppm_user')
@@ -187,7 +264,10 @@ function Proposals() {
     }
 
     fetchProposals()
-  }, [fetchProposals])
+    fetchProposalCount()
+    fetchCentres()
+    fetchGroups()
+  }, [fetchProposals, fetchProposalCount, fetchCentres, fetchGroups])
 
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
@@ -195,6 +275,7 @@ function Proposals() {
     if (currentUserName) {
       form.setFieldsValue({ updated_by: currentUserName })
     }
+    setSelectedCentreId(null)
     setModalOpen(true)
   }, [form, currentUserName])
 
@@ -202,9 +283,20 @@ function Proposals() {
     (record) => {
       setEditingRecord(record)
       form.setFieldsValue({ ...record, updated_by: currentUserName || record.updated_by })
+
+      const centerCodeFromRecord = (record.center || '').trim()
+      if (centerCodeFromRecord) {
+        const matchedCentre = centres.find(
+          (c) => (c.code || '').trim() === centerCodeFromRecord,
+        )
+        setSelectedCentreId(matchedCentre ? matchedCentre.id : null)
+      } else {
+        setSelectedCentreId(null)
+      }
+
       setModalOpen(true)
     },
-    [form, currentUserName],
+    [form, currentUserName, centres],
   )
 
   const closeModal = useCallback(() => {
@@ -278,7 +370,9 @@ function Proposals() {
     const technicallyCompleted = tableData.filter(
       (item) =>
         item.technical_completed_year &&
-        item.technical_completed_year.trim() !== '',
+        item.technical_completed_year.trim() !== '' &&
+        !item.financial_completed_year &&
+        !item.financial_completed_year.trim() !== '',
     ).length
     const financiallyCompleted = tableData.filter(
       (item) =>
@@ -289,6 +383,7 @@ function Proposals() {
     ).length
     const pendingProjects = tableData.filter(
       (item) =>
+        item.project_number && item.project_number.trim() !== '' &&
         (!item.technical_completed_year ||
           item.technical_completed_year.trim() === '') &&
         (!item.financial_completed_year ||
@@ -376,7 +471,9 @@ function Proposals() {
       filtered = filtered.filter(
         (item) =>
           item.technical_completed_year &&
-          item.technical_completed_year.trim() !== '',
+          item.technical_completed_year.trim() !== '' &&
+          !item.financial_completed_year &&
+          !item.financial_completed_year.trim() !== '',
       )
     } else if (statusFilter === 'financiallyCompleted') {
       filtered = filtered.filter(
@@ -389,12 +486,18 @@ function Proposals() {
     } else if (statusFilter === 'pendingProjects') {
       filtered = filtered.filter(
         (item) =>
+          item.project_number && item.project_number.trim() !== '' &&
           (!item.technical_completed_year ||
             item.technical_completed_year.trim() === '') &&
           (!item.financial_completed_year ||
             item.financial_completed_year.trim() === ''),
+      )}
+      else if(statusFilter === 'proposals'){
+        filtered = filtered.filter(
+        (item) =>
+          !item.project_number && !item.project_number.trim() !== ''
       )
-    }
+      }
 
     setFilteredData(filtered)
   }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, projectNumberFilter, tableData])
@@ -406,6 +509,26 @@ function Proposals() {
     ]
     return centers.sort()
   }, [tableData])
+
+  const centreCodeOptions = useMemo(
+    () =>
+      centres
+        .map((c) => (c.code || '').trim())
+        .filter((code) => code)
+        .sort(),
+    [centres],
+  )
+
+  const filteredGroups = useMemo(
+    () =>
+      groups.filter(
+        (g) =>
+          selectedCentreId == null
+            ? true
+            : Number(g.centre_id) === Number(selectedCentreId),
+      ),
+    [groups, selectedCentreId],
+  )
 
   // Export to Excel
   const handleExportExcel = () => {
@@ -728,7 +851,7 @@ function Proposals() {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter(null)}
+                      onClick={()=> setStatusFilter('proposals')}
                     >
                       <Statistic
                         title={
@@ -736,7 +859,7 @@ function Proposals() {
                             Total Proposals
                           </span>
                         }
-                        value={statistics.totalProposals}
+                        value={proposalCount}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -886,6 +1009,7 @@ function Proposals() {
                         </Select>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
+                      <Form.Item label="Project Order Date:">
                         <RangePicker
                           placeholder={['Start Order Date', 'End Order Date']}
                           value={orderDateRange}
@@ -893,9 +1017,10 @@ function Proposals() {
                           size="large"
                           style={{ width: '100%' }}
                           format="YYYY-MM-DD"
-                        />
+                        /></Form.Item>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
+                      <Form.Item label="Proposal Enquiry Date:">
                         <RangePicker
                           placeholder={[
                             'Start Enquiry Date',
@@ -906,7 +1031,7 @@ function Proposals() {
                           size="large"
                           style={{ width: '100%' }}
                           format="YYYY-MM-DD"
-                        />
+                        /></Form.Item>
                       </Col>
                     </Row>
                     <div className="mt-4 flex justify-end gap-3">
@@ -1011,14 +1136,14 @@ function Proposals() {
                     <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
                       <div>
                         <Title level={4} className="!mb-1">
-                          Proposal
+                          Proposal / Projects
                         </Title>
                         <p className="text-slate-500 text-sm">
-                          Showing {filteredData.length} of {tableData.length}{' '}
-                          proposals
+                          Showing {filteredData.length} of 
+                          Proposals / Projects
                         </p>
                       </div>
-                      <ActionButtons label="Proposal" onAdd={openAddModal} />
+                      <ActionButtons label="Proposal / Project" onAdd={openAddModal} />
                     </div>
                     <Table
                       rowKey="key"
@@ -1026,7 +1151,8 @@ function Proposals() {
                       dataSource={filteredData}
                       loading={tableLoading}
                       pagination={{ pageSize: 10 }}
-                      scroll={{ x: 4200 }}
+                      scroll={{ x: 4200, y: 600 }}
+                      sticky
                       bordered
                     />
                   </div>
@@ -1111,6 +1237,213 @@ function Proposals() {
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
+
+              if (field.name === 'customer_type') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                    >
+                      {CUSTOMER_TYPE_OPTIONS.map((option) => (
+                        <Select.Option key={option} value={option}>
+                          {option}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'request_type') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                    >
+                      {REQUEST_TYPE_OPTIONS.map((option) => (
+                        <Select.Option key={option} value={option}>
+                          {option}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'quotation_given_by_department') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                    >
+                      {centreCodeOptions.map((code) => (
+                        <Select.Option key={code} value={code}>
+                          {code}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'center') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                    getValueProps={(value) => ({
+                      value: value ? [value] : [],
+                    })}
+                    normalize={(value) => {
+                      if (Array.isArray(value)) {
+                        return value[value.length - 1] || ''
+                      }
+                      return value || ''
+                    }}
+                  >
+                    <Select
+                      mode="tags"
+                      showSearch
+                      allowClear
+                      placeholder={field.label}
+                      onChange={(val) => {
+                        const value = Array.isArray(val)
+                          ? val[val.length - 1] || ''
+                          : val || ''
+                        form.setFieldsValue({ center: value, group: undefined })
+                        const matchedCentre = centres.find(
+                          (c) => (c.code || '').trim() === (value || '').trim(),
+                        )
+                        setSelectedCentreId(matchedCentre ? matchedCentre.id : null)
+                      }}
+                    >
+                      {centreCodeOptions.map((code) => (
+                        <Select.Option key={code} value={code}>
+                          {code}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'group') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please select ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                  >
+                    <Select allowClear disabled={!selectedCentreId}>
+                      {filteredGroups.map((group) => (
+                        <Select.Option key={group.id} value={group.code}>
+                          {group.code}
+                        </Select.Option>
+                      ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
               return (
                 <Form.Item
                   key={field.name}

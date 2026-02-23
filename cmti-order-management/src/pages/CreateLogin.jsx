@@ -69,11 +69,9 @@ function CreateLogin() {
         <div className="flex flex-col items-center gap-4 mb-6">
           <img src={cmtiLogo} alt="CMTI logo" className="h-16 w-auto object-contain" />
           <Title level={3} className="!mb-0 text-center">
-           Sign Up
+            Sign Up
           </Title>
-          <Text type="secondary" className="text-center">
-            Fill in the details to create a new login
-          </Text>
+        
         </div>
 
         <Form
@@ -146,10 +144,10 @@ function CreateLogin() {
 
           <div className="md:col-span-2 flex justify-end gap-3 mt-2">
             <Button onClick={() => navigate('/')}>
-              Back to Login
+              Back to SIgn In
             </Button>
             <Button type="primary" htmlType="submit" loading={loading}>
-            Sign Up
+              SIgn up
             </Button>
           </div>
         </Form>

@@ -45,6 +45,7 @@ const safeId = (item) => item?.id ?? item?.key ?? ''
 
 const getProjectTheme = (projectNumber) => {
   const num = (projectNumber || '').toString().toUpperCase()
+
   if (num.includes('ISP')) {
     return {
       cardClass: 'border-l-4 border-blue-500 bg-blue-50',
@@ -52,16 +53,66 @@ const getProjectTheme = (projectNumber) => {
       pillLabel: 'ISP',
     }
   }
+
   if (num.includes('GSP')) {
     return {
-      cardClass: 'border-l-4 border-red-500 bg-red-50',
-      pillClass: 'bg-red-500/10 text-red-700 border border-red-500/30',
+      cardClass: 'border-l-4 border-indigo-500 bg-indigo-50',
+      pillClass: 'bg-indigo-500/10 text-indigo-700 border border-indigo-500/30',
       pillLabel: 'GSP',
     }
   }
+
+  if (num.includes('GAP')) {
+    return {
+      cardClass: 'border-l-4 border-emerald-500 bg-emerald-50',
+      pillClass: 'bg-emerald-500/10 text-emerald-700 border border-emerald-500/30',
+      pillLabel: 'GAP',
+    }
+  }
+
+  if (num.includes('ILP')) {
+    return {
+      cardClass: 'border-l-4 border-amber-500 bg-amber-50',
+      pillClass: 'bg-amber-500/10 text-amber-700 border border-amber-500/30',
+      pillLabel: 'ILP',
+    }
+  }
+
+  if (num.includes('DPP')) {
+    return {
+      cardClass: 'border-l-4 border-purple-500 bg-purple-50',
+      pillClass: 'bg-purple-500/10 text-purple-700 border border-purple-500/30',
+      pillLabel: 'DPP',
+    }
+  }
+
+  if (num.includes('LSP')) {
+    return {
+      cardClass: 'border-l-4 border-teal-500 bg-teal-50',
+      pillClass: 'bg-teal-500/10 text-teal-700 border border-teal-500/30',
+      pillLabel: 'LSP',
+    }
+  }
+
+  if (num.includes('CLP')) {
+    return {
+      cardClass: 'border-l-4 border-cyan-500 bg-cyan-50',
+      pillClass: 'bg-cyan-500/10 text-cyan-700 border border-cyan-500/30',
+      pillLabel: 'CLP',
+    }
+  }
+
+  if (num.includes('SO')) {
+    return {
+      cardClass: 'border-l-4 border-rose-500 bg-rose-50',
+      pillClass: 'bg-rose-500/10 text-rose-700 border border-rose-500/30',
+      pillLabel: 'SO',
+    }
+  }
+
   return {
-    cardClass: 'border-l-4 border-green-500 bg-green-50',
-    pillClass: 'bg-green-500/10 text-green-700 border border-green-500/30',
+    cardClass: 'border-l-4 border-slate-500 bg-slate-50',
+    pillClass: 'bg-slate-500/10 text-slate-700 border border-slate-500/30',
     pillLabel: 'Other',
   }
 }
@@ -73,11 +124,17 @@ function Projects() {
   const [projectRows, setProjectRows] = useState([])
   const [loading, setLoading] = useState(true)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [stageConfig, setStageConfig] = useState([])
   
+  // Project details state
   const [selectedProject, setSelectedProject] = useState(null)
   const [stageData, setStageData] = useState([])
   const [loadingStages, setLoadingStages] = useState(false)
   const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
+  const [allotmentModalVisible, setAllotmentModalVisible] = useState(false)
+  const [selectedStageForAllotment, setSelectedStageForAllotment] = useState(null)
+  const [allotmentData, setAllotmentData] = useState(null)
+  const [loadingAllotment, setLoadingAllotment] = useState(false)
 
   // Upload
   const [uploadModalVisible, setUploadModalVisible] = useState(false)
@@ -118,17 +175,50 @@ function Projects() {
     }
 
     fetchProjects()
+    fetchStageConfig()
   }, [])
 
   const fetchProjects = async () => {
     setLoading(true)
+
+    // Get the center from logged-in user (lowercase to match API expectation)
+    let userCenter = ''
     try {
-      const res = await fetch(`${apiBase}/proposals/`)
-      if (!res.ok) {
-        throw new Error(`Failed to fetch projects: ${res.status}`)
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser && parsedUser.center) {
+          userCenter = parsedUser.center.trim().toLowerCase() // e.g., "smpm"
+        }
       }
+    } catch (error) {
+      console.error('Failed to read user center from localStorage', error)
+    }
+
+    // Fallback if no center found
+    if (!userCenter) {
+      message.error('User center not found. Please log in again.')
+      setLoading(false)
+      setProjectRows([])
+      return
+    }
+
+    try {
+      const res = await fetch(`${apiBase}/proposals/by-centre/${userCenter}`, {
+        headers: {
+          'accept': 'application/json'
+        }
+      })
+
+      if (!res.ok) {
+        const errText = await res.text().catch(() => 'Unknown error')
+        throw new Error(`Failed to fetch projects: ${res.status} - ${errText}`)
+      }
+
       const data = await res.json()
-      console.log('Fetched projects:', data)
+      console.log('Fetched projects for center:', userCenter, data)
+
+      // Ensure it's always an array
       setProjectRows(Array.isArray(data) ? data : [])
     } catch (error) {
       console.error('Error fetching projects:', error)
@@ -139,24 +229,86 @@ function Projects() {
     }
   }
 
+  const fetchStageConfig = async () => {
+    try {
+      const res = await fetch(`${apiBase}/stages/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch stage configuration')
+      }
+      const data = await res.json()
+      const normalized = Array.isArray(data)
+        ? data.map((item) => ({ ...item, key: item.id }))
+        : []
+      setStageConfig(normalized)
+      return normalized
+    } catch (error) {
+      console.error('Error fetching stage configuration:', error)
+      return []
+    }
+  }
+
   const cards = useMemo(() => projectRows || [], [projectRows])
 
-  const restrictedStages = {
-    uploadDisabled: ['progress', 'payments'],
-    remarksDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'payments', 'closure report'],
-    paymentDisabled: ['enquiry', 'proposal', 'po', 'po acknowledgment', 'progress', 'closure report'],
+  const getStageAccessList = (stage) => {
+    if (!stage) return []
+    let config = null
+    if (Array.isArray(stageConfig)) {
+      config = stageConfig.find((s) => s.id === stage.stage_id)
+      if (!config) {
+        const name = (stage.stage_name || '').trim().toLowerCase()
+        if (name) {
+          config = stageConfig.find(
+            (s) => (s.name || '').trim().toLowerCase() === name
+          )
+        }
+      }
+    }
+
+    const raw = config?.access
+    if (!raw || typeof raw !== 'string') return []
+    return raw
+      .split(',')
+      .map((item) => item.trim().toLowerCase())
+      .filter(Boolean)
   }
 
   const fetchStageData = async (projectId) => {
     setLoadingStages(true)
     try {
+      const config = await fetchStageConfig()
+
       const res = await fetch(`${apiBase}/proposals/stage_wise/${projectId}`)
       if (!res.ok) {
         const err = await res.text().catch(() => 'Failed')
         throw new Error(err || 'Failed to fetch stage data')
       }
       const data = await res.json()
-      setStageData(Array.isArray(data) ? data : [])
+
+      const getPosition = (stage) => {
+        const matched = config.find((s) => s.id === stage.stage_id)
+        const raw = matched?.position ?? stage.position
+
+        const num = typeof raw === 'number' ? raw : Number(raw)
+        return Number.isNaN(num) ? null : num
+      }
+
+      const sorted = Array.isArray(data)
+        ? [...data].sort((a, b) => {
+            const pa = getPosition(a)
+            const pb = getPosition(b)
+
+            const paValid = pa !== null
+            const pbValid = pb !== null
+
+            if (!paValid && !pbValid) return 0
+            if (!paValid) return 1
+            if (!pbValid) return -1
+            return pa - pb
+          })
+        : []
+      setStageData(sorted)
     } catch (error) {
       console.error('Error fetching stages:', error)
       message.error('Failed to load stage data')
@@ -175,6 +327,228 @@ function Projects() {
   const handleBackToProjects = () => {
     setSelectedProject(null)
     setStageData([])
+  }
+
+  const handleOpenAllotmentModal = (stage) => {
+    const projectId = Number(safeId(selectedProject))
+    if (!projectId) {
+      message.error('Project ID not found')
+      return
+    }
+
+    setSelectedStageForAllotment(stage)
+    setAllotmentModalVisible(true)
+    setLoadingAllotment(true)
+    setAllotmentData(null)
+
+    fetch(`${apiBase}/proposals/payments/${projectId}`, {
+      headers: { accept: 'application/json' },
+    })
+      .then(async (res) => {
+        if (!res.ok) {
+          const errText = await res.text().catch(() => 'Failed to load allotment sheet')
+          throw new Error(errText || 'Failed to load allotment sheet')
+        }
+        return res.json()
+      })
+      .then((data) => {
+        setAllotmentData(data)
+      })
+      .catch((err) => {
+        console.error('Allotment sheet fetch error:', err)
+        message.error(err.message || 'Failed to load allotment sheet')
+      })
+      .finally(() => {
+        setLoadingAllotment(false)
+      })
+  }
+
+  const handleCloseAllotmentModal = () => {
+    setAllotmentModalVisible(false)
+    setSelectedStageForAllotment(null)
+    setAllotmentData(null)
+    setLoadingAllotment(false)
+  }
+
+  const handleDownloadAllotment = async (format) => {
+    const projectId = Number(safeId(selectedProject))
+    if (!projectId) {
+      message.error('Project ID not found')
+      return
+    }
+
+    const normalizedFormat = (format || '').toLowerCase() === 'pdf' ? 'pdf' : 'word'
+
+    try {
+      const res = await fetch(`${apiBase}/proposals/payments/${projectId}`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch allotment data')
+      }
+      const data = await res.json()
+
+      const paymentsRows = Array.isArray(data?.payments) ? data.payments : []
+
+      const html = `<!DOCTYPE html>
+  <html>
+    <head>
+      <meta charset="UTF-8" />
+      <title>Allotment Sheet</title>
+      <style>
+        body { font-family: Arial, sans-serif; color: #000; padding: 32px; }
+        h2 { text-align: center; margin-bottom: 32px; }
+        .label { font-weight: 600; margin-right: 8px; }
+        .block { margin-bottom: 6px; }
+
+        table { border-collapse: collapse; width: 100%; margin-top: 16px; }
+        th, td { border: 1px solid #000; padding: 4px; font-size: 12px; }
+        .copy-to { margin-top: 32px; font-size: 12px; }
+        .header-table { width: 100%; border: none; margin-bottom: 8px; }
+        .header-table td { border: none; padding: 0; }
+        .header-left { text-align: left; }
+        .header-right { text-align: right; }
+        .copy-to-table { width: 100%; border: none; margin-top: 8px; text-align: center; }
+        .copy-to-table td { border: none; padding-top: 4px; }
+      </style>
+    </head>
+    <body>
+      <div>
+        <h2>PP &amp; BD DEPT</h2>
+
+        <table class="header-table">
+          <tr>
+            <td class="header-left">
+              <span class="label">Released to C -</span>
+              <span class="label">${data?.center || ''}</span>
+            </td>
+            <td class="header-right">
+              <span class="label">Date:</span>
+              <span class="label">${data?.order_date || ''}</span>
+            </td>
+          </tr>
+        </table>
+
+        <div class="block">
+          <span class="label">${data?.activity || 'Project Name'}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Customer:</span>
+          <span>${(data?.party_name || '') + (data?.address ? ', ' + data.address : '')}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Contact Person:</span>
+          <span>${data?.email || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Co-ordinator:</span>
+          <span>${data?.project_co_ordinator || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Email &amp; Contact details:</span>
+          <span></span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Number:</span>
+          <span class="label">${data?.project_number || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Project Name:</span>
+          <span class="label">${data?.activity || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Order Value:</span>
+          <span>${data?.order_value || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Purchase order No:</span>
+          <span>${data?.order_number || ''}</span>
+        </div>
+
+        <div class="block">
+          <span class="label">Delivery date:</span>
+          <span>${data?.delivery_date || ''}</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Full / Stage Payment</th>
+              <th>Invoice No and Amount</th>
+              <th>Invoice Date</th>
+              <th>Payment Received</th>
+              <th>Payment Received Date</th>
+              <th>Balance amount and remarks</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${paymentsRows.length > 0
+              ? paymentsRows.map((row) => `
+                <tr>
+                  <td></td>
+                  <td>${row.invoice_no || ''}</td>
+                  <td>${row.invoice_date || ''}</td>
+                  <td>${row.amount_recieved || ''}</td>
+                  <td>${row.recieved_date || ''}</td>
+                  <td>${row.bal || ''}</td>
+                </tr>`).join('')
+              : `
+                <tr>
+                  <td colspan="6" style="text-align:center;color:#666;">No payment records available</td>
+                </tr>
+              `}
+          </tbody>
+        </table>
+
+        <div class="copy-to">
+          <div class="block">Copy to:</div>
+          <table class="copy-to-table">
+            <tr>
+              <td>GH (P&S)</td>
+              <td>Sr. CAO</td>
+              <td>GH (C-${data?.center || ''})</td>
+              <td>CH (C-${data?.center || ''})</td>
+            </tr>
+          </table>
+        </div>
+
+        <div style="margin-top: 16px; text-align: right; font-weight: 600;">CH (PP&amp;BD)</div>
+        <div style="margin-top: 16px; font-weight: 600; font-size: 12px;">Director: For kind information</div>
+      </div>
+    </body>
+  </html>`
+      if (normalizedFormat === 'word') {
+        const blob = new Blob([html], { type: 'application/msword' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `allotment-${projectId}.doc`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+      } else {
+        const win = window.open('', '_blank')
+        if (!win) {
+          message.error('Popup blocked. Please allow popups to download the PDF.')
+          return
+        }
+        win.document.open()
+        win.document.write(html + '<script>window.print();</script>')
+        win.document.close()
+      }
+    } catch (err) {
+      console.error('Allotment download error:', err)
+      message.error(err.message || 'Failed to download allotment sheet')
+    }
   }
 
   // Upload Document handlers
@@ -390,7 +764,7 @@ function Projects() {
     }
   }
 
-    const [searchText, setSearchText] = useState('')
+  const [searchText, setSearchText] = useState('')
   const [selectedCenter, setSelectedCenter] = useState(undefined)   // “center” field in your project objects
 
   // Extract unique centers-centers for the dropdown (you can adjust the field name if it’s different)
@@ -492,6 +866,11 @@ function Projects() {
 
   // Project details view
   if (selectedProject) {
+    const getAllotmentPaymentRow = (index) => {
+      if (!allotmentData || !Array.isArray(allotmentData.payments)) return {}
+      return allotmentData.payments[index] || {}
+    }
+
     return (
       <div className="rounded-3xl bg-white p-6 shadow-sm">
         <div className="mb-6 flex items-center justify-between">
@@ -529,21 +908,11 @@ function Projects() {
                 const hasDocs = Array.isArray(stage.documents) && stage.documents.length > 0
                 const hasProg = Array.isArray(stage.progress) && stage.progress.length > 0
                 const hasPay = Array.isArray(stage.payments) && stage.payments.length > 0
-
-                const hideUpload = restrictedStages.uploadDisabled.includes(stageNameLower)
-                const hideRemarks = restrictedStages.remarksDisabled.includes(stageNameLower)
-                const hidePayment = restrictedStages.paymentDisabled.includes(stageNameLower)
-
-                const defaultStageNames = [
-                  'enquiry',
-                  'proposal',
-                  'po',
-                  'po acknowledgment',
-                  'progress',
-                  'payments',
-                  'closure report',
-                ]
-                const isCustomStage = !defaultStageNames.includes(stageNameLower)
+                const accessList = getStageAccessList(stage)
+                const canUpload = accessList.includes('upload')
+                const canAddRemarks = accessList.includes('add remarks')
+                const canAddPayments = accessList.includes('add payments')
+                const canViewAllotment = accessList.includes('view allotment sheet')
 
                 return (
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
@@ -551,7 +920,7 @@ function Projects() {
                       <Title level={4} className="!mb-0">
                         <Tag color="blue">{stage.stage_id}</Tag> {stageName || 'Stage'}
                       </Title>
-                      {!hideUpload && (
+                      {canUpload && (
                         <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>
                           Upload
                         </Button>
@@ -580,9 +949,41 @@ function Projects() {
                       </div>
                     )}
 
+                    {canViewAllotment && (
+                      <div className="mb-6">
+                        <Card size="small" className="border-l-4 border-l-indigo-600">
+                          <div className="flex items-center justify-between">
+                            <Text strong>Allotment Sheet</Text>
+                            <Space>
+                              <Button
+                                size="small"
+                                type="primary"
+                                icon={<EyeOutlined />}
+                                onClick={() => handleOpenAllotmentModal(stage)}
+                              >
+                                View
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => handleDownloadAllotment('word')}
+                              >
+                                Download as Word
+                              </Button>
+                              <Button
+                                size="small"
+                                onClick={() => handleDownloadAllotment('pdf')}
+                              >
+                                Download as PDF
+                              </Button>
+                            </Space>
+                          </div>
+                        </Card>
+                      </div>
+                    )}
+
                     <div className="mb-6">
                       <div className="flex justify-between items-center mb-3">
-                        {!hideRemarks && !isCustomStage && (
+                        {canAddRemarks && (
                           <Button size="small" type="dashed" icon={<PlusOutlined />} onClick={() => handleOpenRemarksModal(stage)}>
                             Add Remark
                           </Button>
@@ -612,7 +1013,7 @@ function Projects() {
 
                     <div>
                       <div className="flex justify-between items-center mb-3">
-                        {!hidePayment && !isCustomStage && (
+                        {canAddPayments && (
                           <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => handleOpenPaymentModal(stage)}>
                             Add Payment
                           </Button>
@@ -757,10 +1158,165 @@ function Projects() {
         >
           <iframe src={viewDocumentUrl} className="w-full h-[80vh]" title="Document" />
         </Modal>
+
+        <Modal
+          title={`Allotment Sheet - ${selectedStageForAllotment?.stage_name || ''}`}
+          open={allotmentModalVisible}
+          onCancel={handleCloseAllotmentModal}
+          footer={null}
+          width={900}
+        >
+          <div className="bg-white text-black p-8 max-h-[80vh] overflow-auto">
+            <div className="text-center mb-8">
+              <h2 className="text-xl font-semibold">PP &amp; BD DEPT</h2>
+            </div>
+
+            {loadingAllotment && (
+              <div className="py-10 text-center text-slate-500">Loading allotment sheet...</div>
+            )}
+
+            {!loadingAllotment && (
+              <>
+
+                <div className="flex justify-between mb-2">
+                  <div>
+                    <span className="mr-2 font-semibold">Released to C -</span>
+                    <span className="mr-2 font-semibold">
+                      {allotmentData?.center || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="mr-2 font-semibold">Date:</span>
+                    <span className="mr-2 font-semibold">
+                      {allotmentData?.order_date || ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-1">
+                  <div className=" inline-block px-4 py-1 font-semibold">
+                    {allotmentData?.activity || 'Project Name'}
+                  </div>
+                </div>
+
+                <div className="space-y-2 mb-8 text-sm">
+                  <div>
+                    <span className="font-semibold mr-2">Customer:</span>
+                    <span className="inline-block min-w-[300px] align-middle">
+                      {`${allotmentData?.party_name || ''}${
+                        allotmentData?.address ? ', ' + allotmentData.address : ''
+                      }`}
+                    </span>
+                  </div>
+
+
+                  <div>
+                    <span className="font-semibold mr-2">Contact Person:</span>
+                    <span className="inline-block min-w-[300px]  align-middle"> {allotmentData?.email ||''} </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Co-ordinator:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.project_co_ordinator || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Email &amp; Contact details:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Number:</span>
+                    <span className="inline-block min-w-[300px] font-semibold align-middle">
+                      {allotmentData?.project_number || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Project Name:</span>
+                    <span className="inline-block min-w-[300px] font-semibold  align-middle">
+                      {allotmentData?.activity || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Order Value:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.order_value || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Purchase order No:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.order_number || ''}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="font-semibold mr-2">Delivery date:</span>
+                    <span className="inline-block min-w-[300px]  align-middle">
+                      {allotmentData?.delivery_date || ''}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="mb-8">
+                  <table className="w-full border border-black text-xs">
+                    <thead>
+                      <tr>
+                        <th className="border border-black px-2 py-1 text-left">Full / Stage Payment</th>
+                        <th className="border border-black px-2 py-1 text-left">Invoice No and Amount</th>
+                        <th className="border border-black px-2 py-1 text-left">Invoice Date</th>
+                        <th className="border border-black px-2 py-1 text-left">Payment Received</th>
+                        <th className="border border-black px-2 py-1 text-left">Payment Received Date</th>
+                        <th className="border border-black px-2 py-1 text-left">Balance amount and remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allotmentData?.payments && Array.isArray(allotmentData.payments) && allotmentData.payments.length > 0 ? (
+                        allotmentData.payments.map((row, idx) => (
+                          <tr key={row.id || idx}>
+                            <td className="border border-black px-2 py-1"></td>
+                            <td className="border border-black px-2 py-1">{row.invoice_no || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.invoice_date || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.amount_recieved || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.recieved_date || ''}</td>
+                            <td className="border border-black px-2 py-1">{row.bal || ''}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan="6" className="border border-black px-2 py-1 text-center text-gray-500">
+                            No payment records available
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="flex justify-between items-start text-sm mt-8">
+                  <div>
+                    <div className="font-semibold mb-6">Copy to:</div>
+                    <div className="inline-flex [column-gap:8.5rem]">
+                      <span style={{marginLeft:'10px'}}>GH (P&S)</span>
+                      <span>Sr. CAO</span>
+                      <span>GH (C-{allotmentData?.center || ''})</span>
+                      <span>CH (C-{allotmentData?.center || ''})</span>
+                    </div>
+
+                  </div>
+                  <div className="text-right font-semibold">CH (PP&amp;BD)</div>
+                </div>
+                <div className="mt-4 font-semibold">Director: For kind information</div>
+
+
+              </>
+            )}
+          </div>
+        </Modal>
+
       </div>
     )
   }
-
 
   // Projects list view
   return (
