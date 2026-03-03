@@ -7,7 +7,7 @@ from minio import Minio
 from minio.error import S3Error
 
 
-MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "172.18.100.160:9000")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "172.18.7.91:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
 MINIO_BUCKET = os.getenv("MINIO_BUCKET", "cmti-order-management")
