@@ -178,6 +178,7 @@ function Proposals() {
   const [tableLoading, setTableLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [liveExcelModalOpen, setLiveExcelModalOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [searchText, setSearchText] = useState('')
@@ -1261,6 +1262,12 @@ function Proposals() {
                         Import Excel
                       </Button>
                       <Button
+                        onClick={() => setLiveExcelModalOpen(true)}
+                        size="large"
+                      >
+                        Connect Live Excel
+                      </Button>
+                      <Button
                         type="primary"
                         icon={<DownloadOutlined />}
                         size="large"
@@ -1342,6 +1349,60 @@ function Proposals() {
                       </div>
                     </Modal>
                   )}
+
+                  <Modal
+                    title="HOW TO CONNECT LIVE EXCEL"
+                    open={liveExcelModalOpen}
+                    onCancel={() => setLiveExcelModalOpen(false)}
+                    footer={[
+                      <Button key="close" onClick={() => setLiveExcelModalOpen(false)}>
+                        Close
+                      </Button>,
+                    ]}
+                    width={800}
+                  >
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, marginBottom: 6 }}>URL</div>
+                        <div
+                          style={{
+                            fontFamily: 'monospace',
+                            background: '#f5f5f5',
+                            padding: '8px 10px',
+                            borderRadius: 6,
+                            wordBreak: 'break-all',
+                          }}
+                        >
+                          {`${API_BASE_URL}/proposals/live-export`}
+                        </div>
+                      </div>
+
+                      <div style={{ lineHeight: 1.7 }}>
+                        <div>1. Open Microsoft Excel (new blank workbook)</div>
+                        <div>2. Go to: Data → Get Data → From Web</div>
+                        <div>
+                          3. Enter this URL: <b>{`${API_BASE_URL}/proposals/live-export`}</b>
+                        </div>
+                        <div>4. Click OK → Load</div>
+                        <div>5. To set Auto-refresh:</div>
+                        <div style={{ marginLeft: 18 }}>- Right click the table → Refresh</div>
+                        <div style={{ marginLeft: 18 }}>- Go to Data → Queries & Connections</div>
+                        <div style={{ marginLeft: 18 }}>- Right click query → Properties</div>
+                        <div style={{ marginLeft: 18 }}>- Check "Refresh every X minutes"</div>
+                        <div style={{ marginLeft: 18 }}>- Check "Refresh data when opening the file"</div>
+                        <div>6. Save the Excel file</div>
+                      </div>
+
+                      <div style={{ color: '#666' }}>
+                        This link returns CSV by default. If you want JSON, use
+                        {' '}
+                        <span style={{ fontFamily: 'monospace' }}>
+                          {`${API_BASE_URL}/proposals/live-export?export_format=json`}
+                        </span>
+                        .
+                      </div>
+                    </div>
+                  </Modal>
 
                   {/* Proposals Table */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">

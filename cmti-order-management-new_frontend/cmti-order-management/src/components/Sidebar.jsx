@@ -23,6 +23,7 @@ function Sidebar() {
 
   const segments = location.pathname.split('/').filter(Boolean)
   const basePath = segments[0] || 'admin'
+  const normalizedBasePath = (basePath || 'admin').toLowerCase()
   const section = segments[1] || 'proposals'
 
   const selectedKey =
@@ -61,7 +62,7 @@ function Sidebar() {
 
   useEffect(() => {
     // Treat Scientist the same as GH
-    const isGHOrScientist = basePath === 'GH' || basePath === 'Scientist'
+    const isGHOrScientist = normalizedBasePath === 'gh' || normalizedBasePath === 'scientist'
 
     const buildDeliveryRemindersCount = (projects) => {
       const today = dayjs().startOf('day')
@@ -113,7 +114,7 @@ function Sidebar() {
         setNotificationCount(unreadCount + reminderCount)
       })
       .catch((error) => console.error('Error fetching notifications:', error));
-  }, []);
+  }, [normalizedBasePath, userName]);
 
   const handleLogout = () => {
     try {
@@ -127,7 +128,7 @@ function Sidebar() {
   }
 
   // Treat Scientist the same as GH
-  const isGHOrScientist = basePath === 'GH' || basePath === 'Scientist'
+  const isGHOrScientist = normalizedBasePath === 'gh' || normalizedBasePath === 'scientist'
 
   return (
     <Sider
@@ -157,7 +158,12 @@ function Sidebar() {
           mode="inline"
           selectedKeys={[selectedKey]}
           onClick={(info) => {
-            const prefix = basePath === 'CH' ? '/CH' : isGHOrScientist ? `/${basePath}` : '/admin'
+            const prefix =
+              normalizedBasePath === 'ch'
+                ? '/ch'
+                : isGHOrScientist
+                ? `/${normalizedBasePath}`
+                : '/admin'
 
             if (info.key === 'configuration') navigate(`${prefix}/configuration`)
             else if (info.key === 'projects') navigate(`${prefix}/projects`)
@@ -211,7 +217,7 @@ function Sidebar() {
                 ]
               : []),  
 
-            ...(basePath === 'admin'
+            ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'master-proposals',
@@ -221,13 +227,13 @@ function Sidebar() {
                 ]
               : []),
 
-            ...(basePath === 'admin' ? [{
+            ...(normalizedBasePath === 'admin' ? [{
                     key: 'analytics',
                     icon: <BarChartOutlined />,
                     label: 'Analytics'
             }] : []),
 
-            ...(basePath === 'admin'
+            ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'configuration',
@@ -237,7 +243,7 @@ function Sidebar() {
                 ]
               : []),
 
-              ...(basePath === 'admin'
+              ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'notification',
@@ -263,7 +269,7 @@ function Sidebar() {
                 ]
               : []),
 
-              ...(basePath === 'admin'
+              ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'access-control',

@@ -725,6 +725,17 @@ function GHprojects() {
   const handleSubmitPayment = async (values) => {
     setSubmittingPayment(true)
     try {
+      if (!editingPayment) {
+        message.error('You do not have permission to add new payments')
+        return
+      }
+      let username = 'Unknown'
+      try {
+        const ppmUser = JSON.parse(localStorage.getItem('ppm_user'))
+        username = ppmUser?.name || 'Unknown'
+      } catch (e) {
+        username = 'Unknown'
+      }
       const payload = {
         invoice_no: values.invoice_no || '',
         gross_amount: values.gross_amount || '',
@@ -923,7 +934,7 @@ function GHprojects() {
                 const accessList = getStageAccessList(stage)
                 const canUpload = accessList.includes('upload')
                 const canAddRemarks = accessList.includes('add remarks')
-                const canAddPayments = accessList.includes('add payments')
+                const canAddPayments = false
                 const canViewAllotment = accessList.includes('view allotment sheet')
 
                 return (

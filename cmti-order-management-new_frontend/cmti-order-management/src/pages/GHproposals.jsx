@@ -471,19 +471,19 @@ function Proposals() {
         if (overdueDays > 0) {
           return (
             <span style={{ color: '#cf1322', fontWeight: 500 }}>
-              🔴 {overdueDays} days
+               {overdueDays} days
             </span>
           )
         } else if (overdueDays < 0) {
           return (
             <span style={{ color: '#389e0d', fontWeight: 500 }}>
-              🟢 {Math.abs(overdueDays)} days remaining
+               {Math.abs(overdueDays)} days remaining
             </span>
           )
         } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-              🟠 Due Today
+               Due Today
             </span>
           )
         }

@@ -716,7 +716,7 @@ function Proposals() {
         } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-              🟠 Due Today
+               Due Today
             </span>
           )
         }
