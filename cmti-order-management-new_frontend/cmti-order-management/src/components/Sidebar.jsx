@@ -12,7 +12,6 @@ import { useLocation, useNavigate } from 'react-router-dom'
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { API_BASE_URL } from '../config/api.js';
-import dayjs from 'dayjs';
 
 const { Sider } = Layout
 const { Text } = Typography
@@ -22,7 +21,7 @@ function Sidebar() {
   const navigate = useNavigate()
 
   const segments = location.pathname.split('/').filter(Boolean)
-  const basePath = segments[0] || 'admin'
+  const basePath = (segments[0] || 'admin').toLowerCase()
   const section = segments[1] || 'proposals'
 
   const selectedKey =
@@ -61,26 +60,7 @@ function Sidebar() {
 
   useEffect(() => {
     // Treat Scientist the same as GH
-    const isGHOrScientist = basePath === 'GH' || basePath === 'Scientist'
-
-    const buildDeliveryRemindersCount = (projects) => {
-      const today = dayjs().startOf('day')
-      const list = Array.isArray(projects) ? projects : []
-      let count = 0
-
-      for (const p of list) {
-        const rawDelivery = p?.delivery_date
-        if (!rawDelivery) continue
-
-        const delivery = dayjs(rawDelivery).startOf('day')
-        if (!delivery.isValid()) continue
-
-        const daysLeft = delivery.diff(today, 'day')
-        if (daysLeft === 30 || daysLeft === 15) count += 1
-      }
-
-      return count
-    }
+    const isGHOrScientist = basePath === 'gh' || basePath === 'scientist'
 
     const fetchNotifications = () => {
       if (isGHOrScientist) {
@@ -103,14 +83,10 @@ function Sidebar() {
       )
     }
 
-    Promise.all([
-      fetchNotifications(),
-      fetch(`${API_BASE_URL}/proposals/`).then((r) => (r.ok ? r.json() : [])),
-    ])
-      .then(([notificationsRes, projects]) => {
+    fetchNotifications()
+      .then((notificationsRes) => {
         const unreadCount = filterUnread(notificationsRes.data).length
-        const reminderCount = buildDeliveryRemindersCount(projects)
-        setNotificationCount(unreadCount + reminderCount)
+        setNotificationCount(unreadCount)
       })
       .catch((error) => console.error('Error fetching notifications:', error));
   }, []);
@@ -126,8 +102,8 @@ function Sidebar() {
     navigate('/')
   }
 
-  // Treat Scientist the same as GH
-  const isGHOrScientist = basePath === 'GH' || basePath === 'Scientist'
+  // Treat Scientist the same as GH (basePath is already lowercase)
+  const isGHOrScientist = basePath === 'gh' || basePath === 'scientist'
 
   return (
     <Sider
@@ -157,7 +133,7 @@ function Sidebar() {
           mode="inline"
           selectedKeys={[selectedKey]}
           onClick={(info) => {
-            const prefix = basePath === 'CH' ? '/CH' : isGHOrScientist ? `/${basePath}` : '/admin'
+            const prefix = `/${basePath}`
 
             if (info.key === 'configuration') navigate(`${prefix}/configuration`)
             else if (info.key === 'projects') navigate(`${prefix}/projects`)

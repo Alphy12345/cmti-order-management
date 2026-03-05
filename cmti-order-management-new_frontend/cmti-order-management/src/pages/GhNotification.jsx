@@ -1,8 +1,7 @@
 import React, { useEffect, useState } from "react";
 import axios from "axios";
 import { API_BASE_URL } from "../config/api.js";
-import { formatDate, formatDateTime } from "../config/date.js";
-import dayjs from 'dayjs'
+import { formatDateTime } from "../config/date.js";
 
 const GhNotification = () => {
   const [notifications, setNotifications] = useState([]);
@@ -12,65 +11,17 @@ const GhNotification = () => {
       const rawUser = window.localStorage.getItem("ppm_user");
       const parsedUser = JSON.parse(rawUser);
 
-    const buildDeliveryReminders = (projects) => {
-      const today = dayjs().startOf('day')
-      const list = Array.isArray(projects) ? projects : []
-      const reminders = []
-
-      for (const p of list) {
-        const rawDelivery = p?.delivery_date
-        if (!rawDelivery) continue
-
-        const delivery = dayjs(rawDelivery).startOf('day')
-        if (!delivery.isValid()) continue
-
-        const daysLeft = delivery.diff(today, 'day')
-        if (daysLeft !== 30 && daysLeft !== 15) continue
-        if (daysLeft < 0) continue
-
-        const projectName =
-          p?.project_name ??
-          p?.proposal_name ??
-          p?.customer_name ??
-          p?.project_number ??
-          p?.order_number ??
-          'Project'
-
-        reminders.push({
-          id: `delivery-${p?.id ?? projectName}-${daysLeft}`,
-          user_name: 'System',
-          created_at: new Date().toISOString(),
-          message: `Delivery date is nearing (${daysLeft} days).`,
-          project_number: p?.project_number ?? p?.order_number ?? '',
-          proposal_name: `${projectName} - Delivery: ${formatDate(rawDelivery)}`,
-          is_read: 0,
-          trigerred_by: 'system',
-        })
-      }
-
-      return reminders
-    }
-
-    Promise.all([
-      axios.get(`${API_BASE_URL}/notifications/by-quotation-user/?name=${encodeURIComponent(parsedUser.name)}`),
-      fetch(`${API_BASE_URL}/proposals/`).then((r) => (r.ok ? r.json() : [])),
-    ])
-      .then(([notificationsRes, projects]) => {
+    axios.get(`${API_BASE_URL}/notifications/by-quotation-user/?name=${encodeURIComponent(parsedUser.name)}`)
+      .then((notificationsRes) => {
         const filtered = notificationsRes.data.filter(
           (n) => n.trigerred_by !== "Coordinator" && n.is_read !== 1
         );
-        const reminders = buildDeliveryReminders(projects)
-        setNotifications([...reminders, ...filtered]);
+        setNotifications(filtered);
       })
       .catch((error) => console.error("Error fetching notifications:", error));
   }, []);
 
   const markAsRead = (id) => {
-    const current = notifications.find((n) => n.id === id)
-    if (current?.trigerred_by === 'system') {
-      setNotifications(notifications.filter((n) => n.id !== id))
-      return
-    }
     axios
       .put(`${API_BASE_URL}/notifications/${id}`, { is_read: 1 })
       .then(() => {

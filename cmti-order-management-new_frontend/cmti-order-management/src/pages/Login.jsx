@@ -259,6 +259,8 @@ function Login() {
         onCancel={closeForgotPasswordModal}
         footer={null}
         width={500}
+        maskClosable={false}
+        keyboard={false}
       >
         <Steps current={forgotPasswordStep} className="mb-6">
           <Step title="Email" />
