@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
-
+ 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func , desc , or_
 
@@ -43,6 +44,59 @@ def sanitize_amount(val):
 
 
 router = APIRouter(prefix="/proposals", tags=["Proposals"])
+
+
+@router.get("/live-export")
+def live_export_proposals(
+    db: Session = Depends(get_db),
+):
+    proposals = (
+        db.query(Proposal)
+        .filter(Proposal.is_acknowledged == True)
+        .order_by(desc(Proposal.id))
+        .all()
+    )
+
+    proposal_columns = [c.name for c in Proposal.__table__.columns]
+
+    def _proposal_label(column_name: str) -> str:
+        return column_name.replace('_', ' ').title()
+
+    def _to_str(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    result: List[Dict[str, Any]] = []
+    for proposal in proposals:
+        payments = (
+            db.query(Payment)
+            .filter(Payment.project_id == proposal.id)
+            .order_by(Payment.id)
+            .all()
+        )
+
+        row: Dict[str, Any] = {}
+        for col in proposal_columns:
+            row[_proposal_label(col)] = _to_str(getattr(proposal, col, None))
+
+        for i, pay in enumerate(payments, 1):
+            row[f"Inv {i} Inv#"] = _to_str(pay.invoice_no)
+            row[f"Inv {i} Inv Date"] = _to_str(pay.invoice_date)
+            row[f"Inv {i} Gross"] = _to_str(pay.gross_amount)
+            row[f"Inv {i} GST Amt"] = _to_str(pay.get_amount)
+            row[f"Inv {i} Amt Claimed"] = _to_str(pay.amount_claimed)
+            row[f"Inv {i} Amt Recd"] = _to_str(pay.amount_recieved)
+            row[f"Inv {i} Recd Date"] = _to_str(pay.recieved_date)
+            row[f"Inv {i} TDS"] = _to_str(pay.tds)
+            row[f"Inv {i} GST TDS"] = _to_str(pay.get_tds)
+            row[f"Inv {i} LD"] = _to_str(pay.ld)
+            row[f"Inv {i} Balance"] = _to_str(pay.bal)
+            row[f"Inv {i} Status"] = _to_str(pay.follow_up_status)
+
+        result.append(row)
+
+    return JSONResponse(content=jsonable_encoder(result))
 
 
 # ------------------------------
