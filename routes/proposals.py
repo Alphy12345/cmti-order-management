@@ -496,35 +496,56 @@ def bulk_create_proposals(
     created_proposals = []
     
     for row in proposals:
+        # Support both Excel headers with slashes and API-style snake_case keys
+        # Normalize keys for revised/negotiated fields
+        revised_flag = row.get("revised_negotiated", row.get("revised/negotiated"))
+        revised_date = row.get(
+            "revised_negotiated_quote_date",
+            row.get("revised/negotiated_quote_date"),
+        )
+        revised_amount_raw = row.get(
+            "revised_negotiated_quote_amount",
+            row.get("revised/negotiated_quote_amount"),
+        )
+
         # Sanitize amount fields before creating proposal
-        quote_amount = sanitize_amount(row.get('quote_amount'))
-        revised_quote_amount = sanitize_amount(row.get('revised_negotiated_quote_amount'))
-        order_value = sanitize_amount(row.get('order_value'))
+        quote_amount = sanitize_amount(row.get("quote_amount"))
+        revised_quote_amount = sanitize_amount(revised_amount_raw)
+        order_value = sanitize_amount(row.get("order_value"))
         
-        # Build proposal data from row
+        # Build proposal data from row, excluding fields we normalize separately
         data = {
-            k: v for k, v in row.items() 
-            if k not in ['quote_amount', 'revised_negotiated_quote_amount', 'order_value']
+            k: v
+            for k, v in row.items()
+            if k
+            not in [
+                "quote_amount",
+                "order_value",
+                "revised_negotiated",
+                "revised/negotiated",
+                "revised_negotiated_quote_date",
+                "revised/negotiated_quote_date",
+                "revised_negotiated_quote_amount",
+                "revised/negotiated_quote_amount",
+            ]
         }
         
         # Add sanitized amounts (convert to string for DB storage)
         if quote_amount is not None:
-            data['quote_amount'] = str(quote_amount)
+            data["quote_amount"] = str(quote_amount)
         if revised_quote_amount is not None:
-            data['revised_negotiated_quote_amount'] = str(revised_quote_amount)
+            data["revised_negotiated_quote_amount"] = str(revised_quote_amount)
         if order_value is not None:
-            data['order_value'] = str(order_value)
+            data["order_value"] = str(order_value)
         
         # Handle revised_negotiated fields if present
-        if row.get('revised_negotiated') is not None:
-            data['revised_negotiated'] = row.get('revised_negotiated')
-        if row.get('revised_negotiated_quote_date') is not None:
-            data['revised_negotiated_quote_date'] = row.get('revised_negotiated_quote_date')
-        if revised_quote_amount is not None:
-            data['revised_negotiated_quote_amount'] = str(revised_quote_amount)
+        if revised_flag is not None:
+            data["revised_negotiated"] = revised_flag
+        if revised_date is not None:
+            data["revised_negotiated_quote_date"] = revised_date
             
         # Set acknowledged flag for bulk imports
-        data['is_acknowledged'] = True
+        data["is_acknowledged"] = True
         
         proposal = Proposal(**data)
         db.add(proposal)
