@@ -56,6 +56,7 @@ class Proposal(Base):
 
     group = Column(String, nullable=True)
     is_acknowledged = Column(Boolean , nullable= True)
+    status = Column(String, nullable=True)
 
 
     # Child relationships

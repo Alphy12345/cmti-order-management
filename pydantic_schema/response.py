@@ -63,6 +63,7 @@ class ProposalResponse(BaseModel):
     updated_at: datetime
     group: Optional[str] = None
     is_acknowledged: Optional[bool] = None
+    status: Optional[str] = None
     payments: Optional[List[dict]] = None
 
     class Config:

@@ -154,7 +154,7 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
 # ------------------------------
 # LIST ALL PROPOSALS
 # ------------------------------
-@router.get("/", response_model=List[ProposalResponse])
+@router.get("/")
 def list_proposals(
     db: Session = Depends(get_db),
     date_field: Optional[str] = None,
@@ -302,7 +302,44 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
             detail=f"No proposals found for '{name}' in quotation_given_by_name OR project_co_ordinator"
         )
 
-    return proposals
+    # Serialize proposals with payments data
+    result = []
+    for proposal in proposals:
+        # Serialize proposal data
+        proposal_data = {
+            key: value
+            for key, value in proposal.__dict__.items()
+            if not key.startswith("_")
+        }
+        
+        # Get all payments for this proposal
+        payments = db.query(Payment).filter(
+            Payment.project_id == proposal.id
+        ).all()
+        
+        # Serialize payments data
+        payments_data = []
+        for payment in payments:
+            payment_dict = {
+                key: value
+                for key, value in payment.__dict__.items()
+                if not key.startswith("_")
+            }
+            
+            # Add stage name if stage_id exists
+            if payment.stage_id:
+                stage = db.query(Stage).filter(Stage.id == payment.stage_id).first()
+                payment_dict["stage_name"] = stage.name if stage else None
+            else:
+                payment_dict["stage_name"] = None
+                
+            payments_data.append(payment_dict)
+        
+        # Combine proposal with its payments
+        proposal_data["payments"] = payments_data
+        result.append(proposal_data)
+    
+    return result
 
 
 
@@ -550,35 +587,61 @@ def bulk_create_proposals(
     created_proposals = []
     
     for row in proposals:
+        # Support both Excel headers with slashes and API-style snake_case keys
+        # Normalize keys for revised/negotiated fields
+        revised_flag = row.get("revised_negotiated", row.get("revised/negotiated"))
+        revised_date = row.get(
+            "revised_negotiated_quote_date",
+            row.get("revised/negotiated_quote_date"),
+        )
+        revised_amount_raw = row.get(
+            "revised_negotiated_quote_amount",
+            row.get("revised/negotiated_quote_amount"),
+        )
+
         # Sanitize amount fields before creating proposal
-        quote_amount = sanitize_amount(row.get('quote_amount'))
-        revised_quote_amount = sanitize_amount(row.get('revised_negotiated_quote_amount'))
-        order_value = sanitize_amount(row.get('order_value'))
+        quote_amount = sanitize_amount(row.get("quote_amount"))
+        revised_quote_amount = sanitize_amount(revised_amount_raw)
+        order_value = sanitize_amount(row.get("order_value"))
         
-        # Build proposal data from row
+        # Build proposal data from row, excluding fields we normalize separately
         data = {
-            k: v for k, v in row.items() 
-            if k not in ['quote_amount', 'revised_negotiated_quote_amount', 'order_value']
+            k: v
+            for k, v in row.items()
+            if k
+            not in [
+                "quote_amount",
+                "order_value",
+                "revised_negotiated",
+                "revised/negotiated",
+                "revised_negotiated_quote_date",
+                "revised/negotiated_quote_date",
+                "revised_negotiated_quote_amount",
+                "revised/negotiated_quote_amount",
+            ]
         }
         
         # Add sanitized amounts (convert to string for DB storage)
         if quote_amount is not None:
-            data['quote_amount'] = str(quote_amount)
+            data["quote_amount"] = str(quote_amount)
         if revised_quote_amount is not None:
-            data['revised_negotiated_quote_amount'] = str(revised_quote_amount)
+            data["revised_negotiated_quote_amount"] = str(revised_quote_amount)
         if order_value is not None:
-            data['order_value'] = str(order_value)
+            data["order_value"] = str(order_value)
         
         # Handle revised_negotiated fields if present
-        if row.get('revised_negotiated') is not None:
-            data['revised_negotiated'] = row.get('revised_negotiated')
-        if row.get('revised_negotiated_quote_date') is not None:
-            data['revised_negotiated_quote_date'] = row.get('revised_negotiated_quote_date')
-        if revised_quote_amount is not None:
-            data['revised_negotiated_quote_amount'] = str(revised_quote_amount)
+        if revised_flag is not None:
+            data["revised_negotiated"] = revised_flag
+        if revised_date is not None:
+            data["revised_negotiated_quote_date"] = revised_date
+        
+        # Handle status field from Excel (case-insensitive)
+        status_value = row.get("status") or row.get("Status")
+        if status_value is not None:
+            data["status"] = str(status_value).strip() if status_value else None
             
         # Set acknowledged flag for bulk imports
-        data['is_acknowledged'] = True
+        data["is_acknowledged"] = True
         
         proposal = Proposal(**data)
         db.add(proposal)
@@ -618,7 +681,44 @@ def get_proposals_by_centre(centre: str, db: Session = Depends(get_db)):
             detail=f"No proposals found for centre = '{centre}'"
         )
 
-    return proposals
+    # Serialize proposals with payments data
+    result = []
+    for proposal in proposals:
+        # Serialize proposal data
+        proposal_data = {
+            key: value
+            for key, value in proposal.__dict__.items()
+            if not key.startswith("_")
+        }
+        
+        # Get all payments for this proposal
+        payments = db.query(Payment).filter(
+            Payment.project_id == proposal.id
+        ).all()
+        
+        # Serialize payments data
+        payments_data = []
+        for payment in payments:
+            payment_dict = {
+                key: value
+                for key, value in payment.__dict__.items()
+                if not key.startswith("_")
+            }
+            
+            # Add stage name if stage_id exists
+            if payment.stage_id:
+                stage = db.query(Stage).filter(Stage.id == payment.stage_id).first()
+                payment_dict["stage_name"] = stage.name if stage else None
+            else:
+                payment_dict["stage_name"] = None
+                
+            payments_data.append(payment_dict)
+        
+        # Combine proposal with its payments
+        proposal_data["payments"] = payments_data
+        result.append(proposal_data)
+    
+    return result
 
 
 
