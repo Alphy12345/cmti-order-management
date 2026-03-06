@@ -122,8 +122,9 @@ const PROPOSAL_FIELDS = [
   { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
-  { name: 'dispatch_date', label: 'Dispatch Date', width: 160 },
+  { name: 'status', label: 'Status', width: 150, input: 'select' },
   { name: 'ppm_remarks', label: 'PPM Remarks', width: 200, input: 'textarea' },
+  { name: 'dispatch_date', label: 'Dispatch Date', width: 160 },
   { name: 'created_at', label: 'Created At', width: 190, inForm: false },
   { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
   { name: 'updated_by', label: 'Updated By', width: 150, required: true },
@@ -435,11 +436,7 @@ function Proposals() {
     ).length
     const pendingProjects = tableData.filter(
       (item) =>
-        item.project_number && item.project_number.trim() !== '' &&
-        (!item.technical_completed_year ||
-          item.technical_completed_year.trim() === '') &&
-        (!item.financial_completed_year ||
-          item.financial_completed_year.trim() === ''),
+        item.status === 'Ongoing',
     ).length
     return {
       totalProposals,
@@ -538,12 +535,9 @@ function Proposals() {
     } else if (statusFilter === 'pendingProjects') {
       filtered = filtered.filter(
         (item) =>
-          item.project_number && item.project_number.trim() !== '' &&
-          (!item.technical_completed_year ||
-            item.technical_completed_year.trim() === '') &&
-          (!item.financial_completed_year ||
-            item.financial_completed_year.trim() === ''),
-      )}
+          item.status === 'Ongoing',
+      )
+    }
       else if(statusFilter === 'proposals'){
         filtered = filtered.filter(
         (item) =>
@@ -836,6 +830,8 @@ function Proposals() {
       'dispatch_date',
       'created_at',
       'updated_at',
+      'technical_completed_year',
+      'financial_completed_year',
     ])
 
     const amountFields = new Set([
@@ -844,14 +840,53 @@ function Proposals() {
       'order_value',
     ])
 
-    const baseColumns = TABLE_FIELDS.map((field) => ({
-      key: field.name,
-      dataIndex: field.name,
-      title: field.label,
-      width: field.width,
-      fixed: field.fixed,
-      render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : amountFields.has(field.name) ? (value) => formatIndianNumber(value) : undefined),
-    }))
+    const baseColumns = TABLE_FIELDS.map((field) => {
+      const baseColumn = {
+        key: field.name,
+        dataIndex: field.name,
+        title: field.label,
+        width: field.width,
+        fixed: field.fixed,
+      }
+
+      // Custom render for Status field with styled badges
+      if (field.name === 'status') {
+        return {
+          ...baseColumn,
+          render: (value) => {
+            if (!value) return '-'
+            const statusColors = {
+              'Ongoing': { bg: '#e3f2fd', color: '#1565c0' },
+              'Completed': { bg: '#e8f5e9', color: '#2e7d32' },
+              'Delayed': { bg: '#fff3e0', color: '#e65100' },
+              'On Hold': { bg: '#f3e5f5', color: '#6a1b9a' },
+              'Technically completed': { bg: '#e0f7fa', color: '#00695c' },
+              'Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
+              'Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
+            }
+            const colors = statusColors[value] || { bg: '#f5f5f5', color: '#616161' }
+            return (
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '12px',
+                backgroundColor: colors.bg,
+                color: colors.color,
+                fontWeight: 500,
+              }}>
+                {value}
+              </span>
+            )
+          }
+        }
+      }
+
+      // Default render logic for other fields
+      return {
+        ...baseColumn,
+        render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : amountFields.has(field.name) ? (value) => formatIndianNumber(value) : undefined),
+      }
+    })
 
     // Find index of extended_delivery_date and insert overdue_days after it
     const extendedDeliveryIndex = baseColumns.findIndex(
@@ -1262,12 +1297,6 @@ function Proposals() {
                         Import Excel
                       </Button>
                       <Button
-                        onClick={() => setLiveExcelModalOpen(true)}
-                        size="large"
-                      >
-                        Connect Live Excel
-                      </Button>
-                      <Button
                         type="primary"
                         icon={<DownloadOutlined />}
                         size="large"
@@ -1349,60 +1378,6 @@ function Proposals() {
                       </div>
                     </Modal>
                   )}
-
-                  <Modal
-                    title="HOW TO CONNECT LIVE EXCEL"
-                    open={liveExcelModalOpen}
-                    onCancel={() => setLiveExcelModalOpen(false)}
-                    footer={[
-                      <Button key="close" onClick={() => setLiveExcelModalOpen(false)}>
-                        Close
-                      </Button>,
-                    ]}
-                    width={800}
-                  >
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <div>
-                        <div style={{ fontWeight: 600, marginBottom: 6 }}>URL</div>
-                        <div
-                          style={{
-                            fontFamily: 'monospace',
-                            background: '#f5f5f5',
-                            padding: '8px 10px',
-                            borderRadius: 6,
-                            wordBreak: 'break-all',
-                          }}
-                        >
-                          {`${API_BASE_URL}/proposals/live-export`}
-                        </div>
-                      </div>
-
-                      <div style={{ lineHeight: 1.7 }}>
-                        <div>1. Open Microsoft Excel (new blank workbook)</div>
-                        <div>2. Go to: Data → Get Data → From Web</div>
-                        <div>
-                          3. Enter this URL: <b>{`${API_BASE_URL}/proposals/live-export`}</b>
-                        </div>
-                        <div>4. Click OK → Load</div>
-                        <div>5. To set Auto-refresh:</div>
-                        <div style={{ marginLeft: 18 }}>- Right click the table → Refresh</div>
-                        <div style={{ marginLeft: 18 }}>- Go to Data → Queries & Connections</div>
-                        <div style={{ marginLeft: 18 }}>- Right click query → Properties</div>
-                        <div style={{ marginLeft: 18 }}>- Check "Refresh every X minutes"</div>
-                        <div style={{ marginLeft: 18 }}>- Check "Refresh data when opening the file"</div>
-                        <div>6. Save the Excel file</div>
-                      </div>
-
-                      <div style={{ color: '#666' }}>
-                        This link returns CSV by default. If you want JSON, use
-                        {' '}
-                        <span style={{ fontFamily: 'monospace' }}>
-                          {`${API_BASE_URL}/proposals/live-export?export_format=json`}
-                        </span>
-                        .
-                      </div>
-                    </div>
-                  </Modal>
 
                   {/* Proposals Table */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -1712,6 +1687,26 @@ function Proposals() {
                           {group.code}
                         </Select.Option>
                       ))}
+                    </Select>
+                  </Form.Item>
+                )
+              }
+
+              if (field.name === 'status') {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                  >
+                    <Select placeholder="-- Select Status --" allowClear>
+                      <Select.Option value="Ongoing">Ongoing</Select.Option>
+                      <Select.Option value="Completed">Completed</Select.Option>
+                      <Select.Option value="On Hold">On Hold</Select.Option>
+                      <Select.Option value="Delayed">Delayed</Select.Option>
+                      <Select.Option value="Technically completed">Technically completed</Select.Option>
+                      <Select.Option value="Short closed by cutomer">Short closed by cutomer</Select.Option>
+                      <Select.Option value="Short closed by CMTI">Short closed by CMTI</Select.Option>
                     </Select>
                   </Form.Item>
                 )

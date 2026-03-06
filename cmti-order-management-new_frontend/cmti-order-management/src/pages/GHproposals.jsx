@@ -101,6 +101,7 @@ const PROPOSAL_FIELDS = [
   { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
+  { name: 'status', label: 'Status', width: 150, input: 'select' },
   { name: 'dispatch_date', label: 'Dispatch Date', width: 160 },
   { name: 'ppm_remarks', label: 'PPM Remarks', width: 200, input: 'textarea' },
   { name: 'created_at', label: 'Created At', width: 190, inForm: false },
@@ -151,7 +152,18 @@ const mapApiToUi = (record) => {
     mapped[field.name] = record?.[apiName] ?? ''
   })
   mapped.key = record?.id ?? uniqueKey()
+  // Preserve payments data for dynamic column rendering
+  mapped.payments = record?.payments || []
   return mapped
+}
+
+const mapUiToApi = (values) => {
+  const payload = {}
+  FORM_FIELDS.forEach((field) => {
+    const apiName = getApiName(field.name)
+    payload[apiName] = values[field.name] ?? ''
+  })
+  return payload
 }
 
 function Proposals() {
@@ -162,8 +174,11 @@ function Proposals() {
   const [filteredData, setFilteredData] = useState([])
   const [tableLoading, setTableLoading] = useState(false)
   const [coordinatorSubmitLoading, setCoordinatorSubmitLoading] = useState(false)
+  const [submitLoading, setSubmitLoading] = useState(false)
 
   const [coordinatorModalOpen, setCoordinatorModalOpen] = useState(false)
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingRecord, setEditingRecord] = useState(null)
 
   const [searchText, setSearchText] = useState('')
   const [centerFilter, setCenterFilter] = useState(null)
@@ -174,6 +189,69 @@ function Proposals() {
   const [currentUserName, setCurrentUserName] = useState('')
   const [currentUserCenter, setCurrentUserCenter] = useState('')
   const [proposalCount, setProposalCount] = useState(0)
+
+  const openEditModal = useCallback(
+    (record) => {
+      if (!record) return
+      setEditingRecord(record)
+      form.resetFields()
+      form.setFieldsValue({
+        ...record,
+        updated_by: currentUserName || record.updated_by,
+      })
+      setModalOpen(true)
+    },
+    [form, currentUserName],
+  )
+
+  const closeModal = useCallback(() => {
+    setModalOpen(false)
+    setEditingRecord(null)
+    form.resetFields()
+  }, [form])
+
+  const handleSubmit = async (values) => {
+    if (!editingRecord?.id) {
+      message.error('No record selected for editing')
+      return
+    }
+
+    setSubmitLoading(true)
+    
+    // Build payload for coordinator-update endpoint (only allowed fields)
+    const payload = {
+      project_id: editingRecord.id,
+      extended_delivery_date: values.extended_delivery_date || '',
+      co_ordinator_remarks: values.co_ordinator_remarks || '',
+      technical_completed_year: values.technical_completed_year || null,
+      updated_by: values.updated_by || currentUserName || '',
+    }
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/proposals/coordinator-update`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to update proposal')
+      }
+
+      message.success('Proposal updated successfully')
+      closeModal()
+      await fetchProposals()
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to update proposal')
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -301,15 +379,18 @@ function Proposals() {
     const totalProposals = tableData.length
     const totalProjects = tableData.filter((item) => item.project_number?.trim()).length
     const technicallyCompleted = tableData.filter(
-      (item) => item.technical_completed_year?.trim() && !item.financial_completed_year?.trim()
+      (item) =>
+        item.technical_completed_year &&
+        item.technical_completed_year.trim() !== '' &&
+        (!item.financial_completed_year ||
+          item.financial_completed_year.trim() === ''),
     ).length
     const financiallyCompleted = tableData.filter(
       (item) => item.technical_completed_year?.trim() && item.financial_completed_year?.trim()
     ).length
     const pendingProjects = tableData.filter(
       (item) =>
-        item.project_number?.trim() &&
-        (!item.technical_completed_year?.trim() || !item.financial_completed_year?.trim())
+        item.status === 'Ongoing',
     ).length
 
     return { totalProposals, totalProjects, technicallyCompleted, financiallyCompleted, pendingProjects }
@@ -359,7 +440,13 @@ function Proposals() {
       if (statusFilter === 'totalProjects')
         filtered = filtered.filter((item) => item.project_number?.trim())
       if (statusFilter === 'technicallyCompleted')
-        filtered = filtered.filter((item) => item.technical_completed_year?.trim())
+        filtered = filtered.filter(
+          (item) =>
+            item.technical_completed_year &&
+            item.technical_completed_year.trim() !== '' &&
+            (!item.financial_completed_year ||
+              item.financial_completed_year.trim() === ''),
+        )
       if (statusFilter === 'financiallyCompleted')
         filtered = filtered.filter(
           (item) => item.technical_completed_year?.trim() && item.financial_completed_year?.trim()
@@ -367,8 +454,7 @@ function Proposals() {
       if (statusFilter === 'pendingProjects')
         filtered = filtered.filter(
           (item) =>
-            item.project_number?.trim() &&
-            (!item.technical_completed_year?.trim() || !item.financial_completed_year?.trim())
+            item.status === 'Ongoing',
         )
       if (statusFilter === 'proposals')
         filtered = filtered.filter((item) => !item.project_number?.trim())
@@ -433,6 +519,8 @@ function Proposals() {
       'dispatch_date',
       'created_at',
       'updated_at',
+      'technical_completed_year',
+      'financial_completed_year',
     ])
 
     const amountFields = new Set([
@@ -441,14 +529,52 @@ function Proposals() {
       'order_value',
     ])
 
-    const base = TABLE_FIELDS.map((f) => ({
-      key: f.name,
-      dataIndex: f.name,
-      title: f.label,
-      width: f.width,
-      fixed: f.fixed,
-      render: f.render ?? (dateFields.has(f.name) ? (value) => formatDate(value) : amountFields.has(f.name) ? (value) => formatIndianNumber(value) : undefined),
-    }))
+    const base = TABLE_FIELDS.map((f) => {
+      const baseColumn = {
+        key: f.name,
+        dataIndex: f.name,
+        title: f.label,
+        width: f.width,
+        fixed: f.fixed,
+      }
+
+      // Custom render for Status field with styled badges
+      if (f.name === 'status') {
+        return {
+          ...baseColumn,
+          render: (value) => {
+            if (!value) return '-'
+            const statusColors = {
+              'Ongoing': { bg: '#e3f2fd', color: '#1565c0' },
+              'Completed': { bg: '#e8f5e9', color: '#2e7d32' },
+              'Delayed': { bg: '#fff3e0', color: '#e65100' },
+              'On Hold': { bg: '#f3e5f5', color: '#6a1b9a' },
+              'Technically completed': { bg: '#e0f7fa', color: '#00695c' },
+              'Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
+              'Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
+            }
+            const colors = statusColors[value] || { bg: '#f5f5f5', color: '#616161' }
+            return (
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '12px',
+                backgroundColor: colors.bg,
+                color: colors.color,
+                fontWeight: 500,
+              }}>
+                {value}
+              </span>
+            )
+          }
+        }
+      }
+
+      return {
+        ...baseColumn,
+        render: f.render ?? (dateFields.has(f.name) ? (value) => formatDate(value) : amountFields.has(f.name) ? (value) => formatIndianNumber(value) : undefined),
+      }
+    })
 
     // Find index of extended_delivery_date and insert overdue_days after it
     const extendedDeliveryIndex = base.findIndex(
@@ -495,6 +621,48 @@ function Proposals() {
       base.splice(extendedDeliveryIndex + 1, 0, overdueDaysColumn)
     }
 
+    // Calculate max payments across all proposals for dynamic columns
+    // Use 1 as minimum to always show at least Invoice 1 columns
+    const maxPayments = Math.max(...tableData.map(p => p.payments?.length || 0), 1)
+
+    // Payment sub-columns configuration
+    const paymentFields = [
+      { key: 'invoice_no', label: 'Inv#', width: 120 },
+      { key: 'invoice_date', label: 'Inv Date', width: 120 },
+      { key: 'gross_amount', label: 'Gross', width: 100 },
+      { key: 'get_amount', label: 'GST Amt', width: 100 },
+      { key: 'amount_claimed', label: 'Amt Claimed', width: 110 },
+      { key: 'amount_recieved', label: 'Amt Recd', width: 100 },
+      { key: 'recieved_date', label: 'Recd Date', width: 120 },
+      { key: 'tds', label: 'TDS', width: 80 },
+      { key: 'get_tds', label: 'GST TDS', width: 90 },
+      { key: 'ld', label: 'LD', width: 80 },
+      { key: 'bal', label: 'Balance', width: 100 },
+      { key: 'follow_up_status', label: 'Status', width: 120 },
+    ]
+
+    // Generate payment columns after ppm_remarks
+    const paymentColumns = []
+    for (let i = 0; i < maxPayments; i++) {
+      paymentFields.forEach((field) => {
+        paymentColumns.push({
+          key: `inv${i + 1}_${field.key}`,
+          dataIndex: 'payments',
+          title: `Inv ${i + 1} ${field.label}`,
+          width: field.width,
+          render: (_, record) => record.payments?.[i]?.[field.key] || '-',
+        })
+      })
+    }
+
+    // Find index of ppm_remarks and insert payment columns after it
+    const ppmRemarksIndex = base.findIndex(
+      (col) => col.key === 'ppm_remarks',
+    )
+    if (ppmRemarksIndex !== -1 && paymentColumns.length > 0) {
+      base.splice(ppmRemarksIndex + 1, 0, ...paymentColumns)
+    }
+
     return [
       ...base,
       {
@@ -504,14 +672,14 @@ function Proposals() {
         width: 100,
         render: (_, record) => (
           <Space size="small">
-            <Button size="small" type="link" icon={<EditOutlined />} onClick={() => message.info('Edit functionality preserved')}>
+            <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
               Edit
             </Button>
           </Space>
         ),
       },
     ]
-  }, [])
+  }, [openEditModal, tableData])
 
   return (
     <>
@@ -535,7 +703,7 @@ function Proposals() {
                     <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white cursor-pointer" onClick={() => setStatusFilter('pendingProjects')}>
-                    <Statistic title={<span className="text-white/90">Pending Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                 </div>
 
@@ -607,6 +775,7 @@ function Proposals() {
                   loading={tableLoading}
                   pagination={{ pageSize: 10 }}
                   scroll={{ x: 4200, y: 600 }}
+                  sticky
                   bordered
                 />
               </div>
@@ -665,6 +834,88 @@ function Proposals() {
                       <Input disabled style={{ background: '#f5f5f5', color: '#000' }} />
                     ) : (
                       <Input placeholder={`Enter ${field.label}`} />
+                    )}
+                  </Form.Item>
+                </Col>
+              )
+            })}
+          </Row>
+        </Form>
+      </Modal>
+
+      {/* Edit Proposal Modal */}
+      <Modal
+        title={editingRecord ? `Edit Proposal / Project` : 'Edit Proposal / Project'}
+        open={modalOpen}
+        onCancel={closeModal}
+        width={1100}
+        okText="Update"
+        confirmLoading={submitLoading}
+        onOk={() => form.submit()}
+        maskClosable={false}
+      >
+        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+          <Row gutter={[16, 16]}>
+            {FORM_FIELDS.map((field) => {
+              const allowedEditFields = [
+                'extended_delivery_date',
+                'co_ordinator_remarks',
+                'technical_completed_year',
+                'updated_by',
+              ]
+
+              // When editing, only show the allowed edit fields
+              if (editingRecord && !allowedEditFields.includes(field.name)) {
+                return null
+              }
+
+              const isTextArea = field.input === 'textarea'
+              const isUpdatedByField = field.name === 'updated_by'
+              
+              // Date fields that should use DatePicker
+              const dateFields = [
+                'enquiry_date',
+                'quote_date',
+                'revised_negotiated_quote_date',
+                'order_date',
+                'delivery_date',
+                'extended_delivery_date',
+                'date_of_actual_commencement',
+                'dispatch_date',
+              ]
+              const isDateField = dateFields.includes(field.name)
+              
+              return (
+                <Col span={12} key={field.name}>
+                  <Form.Item 
+                    name={field.name} 
+                    label={field.label} 
+                    rules={field.required ? [{ required: true, message: `${field.label} is required` }] : []}
+                    getValueProps={(value) => ({
+                      value: value && isDateField
+                        ? dayjs(value).isValid()
+                          ? dayjs(value)
+                          : null
+                        : value,
+                    })}
+                    normalize={(value) => {
+                      if (!value) return ''
+                      if (isDateField && dayjs.isDayjs(value)) {
+                        return value.format('YYYY-MM-DD')
+                      }
+                      return value
+                    }}
+                  >
+                    {isTextArea ? (
+                      <TextArea rows={3} placeholder={`Enter ${field.label}`} disabled={isUpdatedByField && editingRecord} />
+                    ) : isDateField ? (
+                      <DatePicker 
+                        style={{ width: '100%' }} 
+                        format="DD.MM.YYYY" 
+                        placeholder={`Select ${field.label}`}
+                      />
+                    ) : (
+                      <Input placeholder={`Enter ${field.label}`} disabled={isUpdatedByField && editingRecord} />
                     )}
                   </Form.Item>
                 </Col>

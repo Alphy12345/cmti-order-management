@@ -599,7 +599,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setRemarksModalVisible(true)
     setRemarksText('')
-    setRemarksBy('')
+    setRemarksBy(currentUserName || '')
     setEditingRemark(null)
   }
 
@@ -607,7 +607,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setEditingRemark(remark)
     setRemarksText(remark.remarks || '')
-    setRemarksBy(remark.updated_by || '')
+    setRemarksBy(currentUserName || '')
     setRemarksModalVisible(true)
   }
 
@@ -1178,7 +1178,7 @@ function Projects() {
         >
           <Space direction="vertical" size="large" className="w-full">
             <TextArea placeholder="Enter your remarks *" value={remarksText} onChange={(e) => setRemarksText(e.target.value)} rows={4} />
-            <Input placeholder="Your Name *" value={remarksBy} onChange={(e) => setRemarksBy(e.target.value)} />
+            <Input placeholder="Your Name *" value={remarksBy} disabled />
           </Space>
         </Modal>
 

@@ -83,6 +83,7 @@ const PROPOSAL_FIELDS = [
   { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
+  { name: 'status', label: 'Status', width: 150, input: 'select' },
   { name: 'dispatch_date', label: 'Dispatch Date', width: 160 },
   { name: 'ppm_remarks', label: 'PPM Remarks', width: 200, input: 'textarea' },
   { name: 'created_at', label: 'Created At', width: 190, inForm: false },
@@ -114,6 +115,8 @@ const mapApiToUi = (record) => {
     mapped[field.name] = record?.[apiName] ?? ''
   })
   mapped.key = record?.id ?? uniqueKey()
+  // Preserve payments data for dynamic column rendering
+  mapped.payments = record?.payments || []
   return mapped
 }
 
@@ -240,32 +243,43 @@ function Proposals() {
   }, [form])
 
   const handleSubmit = async (values) => {
+    if (!editingRecord?.id) {
+      message.error('No record selected for editing')
+      return
+    }
+
     setSubmitLoading(true)
-    const payload = mapUiToApi(values)
-    const isEditing = Boolean(editingRecord)
-    const url = isEditing
-      ? `${API_BASE_URL}/proposals/${editingRecord.id}`
-      : `${API_BASE_URL}/proposals/`
-    const method = isEditing ? 'PUT' : 'POST'
+    
+    // Build payload for coordinator-update endpoint (only allowed fields)
+    const payload = {
+      project_id: editingRecord.id,
+      extended_delivery_date: values.extended_delivery_date || '',
+      co_ordinator_remarks: values.co_ordinator_remarks || '',
+      technical_completed_year: values.technical_completed_year || null,
+      updated_by: values.updated_by || localStorage.getItem('loggedInUser') || '',
+    }
+
     try {
-      const response = await fetch(url, {
-        method,
+      const response = await fetch(`${API_BASE_URL}/proposals/coordinator-update`, {
+        method: 'POST',
         headers: {
           accept: 'application/json',
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(payload),
       })
+
       if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(errorText || 'Request failed')
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to update proposal')
       }
-      await fetchProposals()
-      message.success(isEditing ? 'Proposal updated' : 'Proposal created')
+
+      message.success('Proposal updated successfully')
       closeModal()
+      await fetchProposals()
     } catch (error) {
       console.error(error)
-      message.error(error.message || 'Unable to save proposal')
+      message.error(error.message || 'Unable to update proposal')
     } finally {
       setSubmitLoading(false)
     }
@@ -304,7 +318,9 @@ function Proposals() {
     const technicallyCompleted = tableData.filter(
       (item) =>
         item.technical_completed_year &&
-        item.technical_completed_year.trim() !== '',
+        item.technical_completed_year.trim() !== '' &&
+        (!item.financial_completed_year ||
+          item.financial_completed_year.trim() === ''),
     ).length
     const financiallyCompleted = tableData.filter(
       (item) =>
@@ -315,10 +331,7 @@ function Proposals() {
     ).length
     const pendingProjects = tableData.filter(
       (item) =>
-        (!item.technical_completed_year ||
-          item.technical_completed_year.trim() === '') &&
-        (!item.financial_completed_year ||
-          item.financial_completed_year.trim() === ''),
+        item.status === 'Ongoing',
     ).length
     return {
       totalProposals,
@@ -402,7 +415,9 @@ function Proposals() {
       filtered = filtered.filter(
         (item) =>
           item.technical_completed_year &&
-          item.technical_completed_year.trim() !== '',
+          item.technical_completed_year.trim() !== '' &&
+          (!item.financial_completed_year ||
+            item.financial_completed_year.trim() === ''),
       )
     } else if (statusFilter === 'financiallyCompleted') {
       filtered = filtered.filter(
@@ -415,10 +430,7 @@ function Proposals() {
     } else if (statusFilter === 'pendingProjects') {
       filtered = filtered.filter(
         (item) =>
-          (!item.technical_completed_year ||
-            item.technical_completed_year.trim() === '') &&
-          (!item.financial_completed_year ||
-            item.financial_completed_year.trim() === ''),
+          item.status === 'Ongoing',
       )
     }
 
@@ -666,6 +678,8 @@ function Proposals() {
       'dispatch_date',
       'created_at',
       'updated_at',
+      'technical_completed_year',
+      'financial_completed_year',
     ])
 
     const amountFields = new Set([
@@ -674,14 +688,52 @@ function Proposals() {
       'order_value',
     ])
 
-    const baseColumns = TABLE_FIELDS.map((field) => ({
-      key: field.name,
-      dataIndex: field.name,
-      title: field.label,
-      width: field.width,
-      fixed: field.fixed,
-      render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : amountFields.has(field.name) ? (value) => formatIndianNumber(value) : undefined),
-    }))
+    const baseColumns = TABLE_FIELDS.map((field) => {
+      const baseColumn = {
+        key: field.name,
+        dataIndex: field.name,
+        title: field.label,
+        width: field.width,
+        fixed: field.fixed,
+      }
+
+      // Custom render for Status field with styled badges
+      if (field.name === 'status') {
+        return {
+          ...baseColumn,
+          render: (value) => {
+            if (!value) return '-'
+            const statusColors = {
+              'Ongoing': { bg: '#e3f2fd', color: '#1565c0' },
+              'Completed': { bg: '#e8f5e9', color: '#2e7d32' },
+              'Delayed': { bg: '#fff3e0', color: '#e65100' },
+              'On Hold': { bg: '#f3e5f5', color: '#6a1b9a' },
+              'Technically completed': { bg: '#e0f7fa', color: '#00695c' },
+              'Short closed by cutomer': { bg: '#fce4ec', color: '#c62828' },
+              'Short closed by CMTI': { bg: '#fce4ec', color: '#c62828' },
+            }
+            const colors = statusColors[value] || { bg: '#f5f5f5', color: '#616161' }
+            return (
+              <span style={{
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '12px',
+                backgroundColor: colors.bg,
+                color: colors.color,
+                fontWeight: 500,
+              }}>
+                {value}
+              </span>
+            )
+          }
+        }
+      }
+
+      return {
+        ...baseColumn,
+        render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : amountFields.has(field.name) ? (value) => formatIndianNumber(value) : undefined),
+      }
+    })
 
     // Find index of extended_delivery_date and insert overdue_days after it
     const extendedDeliveryIndex = baseColumns.findIndex(
@@ -728,6 +780,48 @@ function Proposals() {
       baseColumns.splice(extendedDeliveryIndex + 1, 0, overdueDaysColumn)
     }
 
+    // Calculate max payments across all proposals for dynamic columns
+    // Use 1 as minimum to always show at least Invoice 1 columns
+    const maxPayments = Math.max(...tableData.map(p => p.payments?.length || 0), 1)
+
+    // Payment sub-columns configuration
+    const paymentFields = [
+      { key: 'invoice_no', label: 'Inv#', width: 120 },
+      { key: 'invoice_date', label: 'Inv Date', width: 120 },
+      { key: 'gross_amount', label: 'Gross', width: 100 },
+      { key: 'get_amount', label: 'GST Amt', width: 100 },
+      { key: 'amount_claimed', label: 'Amt Claimed', width: 110 },
+      { key: 'amount_recieved', label: 'Amt Recd', width: 100 },
+      { key: 'recieved_date', label: 'Recd Date', width: 120 },
+      { key: 'tds', label: 'TDS', width: 80 },
+      { key: 'get_tds', label: 'GST TDS', width: 90 },
+      { key: 'ld', label: 'LD', width: 80 },
+      { key: 'bal', label: 'Balance', width: 100 },
+      { key: 'follow_up_status', label: 'Status', width: 120 },
+    ]
+
+    // Generate payment columns after ppm_remarks
+    const paymentColumns = []
+    for (let i = 0; i < maxPayments; i++) {
+      paymentFields.forEach((field) => {
+        paymentColumns.push({
+          key: `inv${i + 1}_${field.key}`,
+          dataIndex: 'payments',
+          title: `Inv ${i + 1} ${field.label}`,
+          width: field.width,
+          render: (_, record) => record.payments?.[i]?.[field.key] || '-',
+        })
+      })
+    }
+
+    // Find index of ppm_remarks and insert payment columns after it
+    const ppmRemarksIndex = baseColumns.findIndex(
+      (col) => col.key === 'ppm_remarks',
+    )
+    if (ppmRemarksIndex !== -1 && paymentColumns.length > 0) {
+      baseColumns.splice(ppmRemarksIndex + 1, 0, ...paymentColumns)
+    }
+
     return [
       ...baseColumns,
       {
@@ -749,7 +843,7 @@ function Proposals() {
         ),
       },
     ]
-  }, [openEditModal])
+  }, [openEditModal, tableData])
 
   return (
     <>
@@ -843,7 +937,7 @@ function Proposals() {
                       <Statistic
                         title={
                           <span className="text-white/90">
-                            Pending Projects
+                            Ongoing Projects
                           </span>
                         }
                         value={statistics.pendingProjects}
@@ -980,7 +1074,8 @@ function Proposals() {
                       dataSource={filteredData}
                       loading={tableLoading}
                       pagination={{ pageSize: 10 }}
-                      scroll={{ x: 4200 }}
+                      scroll={{ x: 4200, y: 600 }}
+                      sticky
                       bordered
                     />
                   </div>
@@ -1077,7 +1172,7 @@ function Proposals() {
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
-              const shouldDisable = isUpdatedByField && !editingRecord
+              const shouldDisable = isUpdatedByField && editingRecord
 
               return (
                 <Form.Item
