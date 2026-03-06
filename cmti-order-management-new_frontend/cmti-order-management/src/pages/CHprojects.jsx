@@ -608,7 +608,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setRemarksModalVisible(true)
     setRemarksText('')
-    setRemarksBy('')
+    setRemarksBy(currentUserName || '')
     setEditingRemark(null)
   }
 
@@ -616,7 +616,7 @@ function Projects() {
     setSelectedStageForRemarks(stage)
     setEditingRemark(remark)
     setRemarksText(remark.remarks || '')
-    setRemarksBy(remark.updated_by || '')
+    setRemarksBy(currentUserName || '')
     setRemarksModalVisible(true)
   }
 
@@ -711,6 +711,10 @@ function Projects() {
   const handleSubmitPayment = async (values) => {
     setSubmittingPayment(true)
     try {
+      if (!editingPayment) {
+        message.error('You do not have permission to add new payments')
+        return
+      }
       const payload = {
         invoice_no: values.invoice_no || '',
         gross_amount: values.gross_amount || '',
@@ -728,10 +732,10 @@ function Projects() {
         stage_id: Number(selectedStageForPayment.stage_id),
       }
 
-      const url = editingPayment ? `${apiBase}/payments/${editingPayment.id}` : `${apiBase}/payments/`
+      const url = `${apiBase}/payments/${editingPayment.id}`
 
       const res = await fetch(url, {
-        method: editingPayment ? 'PUT' : 'POST',
+        method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
@@ -741,7 +745,7 @@ function Projects() {
         throw new Error(err.detail || 'Failed to save payment')
       }
 
-      message.success(editingPayment ? 'Payment updated!' : 'Payment added!')
+      message.success('Payment updated!')
       setPaymentModalVisible(false)
       setEditingPayment(null)
       paymentForm.resetFields()
@@ -818,19 +822,7 @@ function Projects() {
     { title: 'LD', dataIndex: 'ld', width: 90 },
     { title: 'Balance', dataIndex: 'bal', width: 90 },
     { title: 'Status', dataIndex: 'follow_up_status', width: 150 },
-    {
-      title: 'Actions',
-      width: 120,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenPaymentModal(stage, record)}>Edit</Button>
-          <Popconfirm title="Delete payment?" onConfirm={() => handleDeletePayment(record.id)}>
-            <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    
   ]
 
   const formatDate = (date) => (date ? formatDateTime(date) : 'N/A')
@@ -909,12 +901,12 @@ function Projects() {
                 const accessList = getStageAccessList(stage)
                 const canUpload = accessList.includes('upload')
                 const canAddRemarks = accessList.includes('add remarks')
-                const canAddPayments = accessList.includes('add payments')
+                const canAddPayments = false
                 const canViewAllotment = accessList.includes('view allotment sheet')
 
                 return (
-                  <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
-                    <div className="flex justify-between items-center mb-5">
+                  <div key={stage.stage_id} className="bg-white rounded-lg border p-4 mb-4">
+                    <div className="flex items-center justify-between">
                       <Title level={4} className="!mb-0">
                         <Tag color="blue">{stage.stage_id}</Tag> {stageName || 'Stage'}
                       </Title>
@@ -1143,7 +1135,7 @@ function Projects() {
         >
           <Space direction="vertical" size="large" className="w-full">
             <TextArea placeholder="Enter your remarks *" value={remarksText} onChange={(e) => setRemarksText(e.target.value)} rows={4} />
-            <Input placeholder="Your Name *" value={remarksBy} onChange={(e) => setRemarksBy(e.target.value)} />
+            <Input placeholder="Your Name *" value={remarksBy} disabled />
           </Space>
         </Modal>
 

@@ -22,6 +22,7 @@ function Sidebar() {
 
   const segments = location.pathname.split('/').filter(Boolean)
   const basePath = (segments[0] || 'admin').toLowerCase()
+  const normalizedBasePath = basePath
   const section = segments[1] || 'proposals'
 
   const selectedKey =
@@ -89,7 +90,7 @@ function Sidebar() {
         setNotificationCount(unreadCount)
       })
       .catch((error) => console.error('Error fetching notifications:', error));
-  }, []);
+  }, [normalizedBasePath, userName]);
 
   const handleLogout = () => {
     try {
@@ -187,7 +188,7 @@ function Sidebar() {
                 ]
               : []),  
 
-            ...(basePath === 'admin'
+            ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'master-proposals',
@@ -197,13 +198,13 @@ function Sidebar() {
                 ]
               : []),
 
-            ...(basePath === 'admin' ? [{
+            ...(normalizedBasePath === 'admin' ? [{
                     key: 'analytics',
                     icon: <BarChartOutlined />,
                     label: 'Analytics'
             }] : []),
 
-            ...(basePath === 'admin'
+            ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'configuration',
@@ -213,7 +214,7 @@ function Sidebar() {
                 ]
               : []),
 
-              ...(basePath === 'admin'
+              ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'notification',
@@ -239,7 +240,7 @@ function Sidebar() {
                 ]
               : []),
 
-              ...(basePath === 'admin'
+              ...(normalizedBasePath === 'admin'
               ? [
                   {
                     key: 'access-control',

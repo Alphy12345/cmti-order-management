@@ -622,7 +622,7 @@ function GHprojects() {
     setSelectedStageForRemarks(stage)
     setRemarksModalVisible(true)
     setRemarksText('')
-    setRemarksBy('')
+    setRemarksBy(currentUserName || '')
     setEditingRemark(null)
   }
 
@@ -630,7 +630,7 @@ function GHprojects() {
     setSelectedStageForRemarks(stage)
     setEditingRemark(remark)
     setRemarksText(remark.remarks || '')
-    setRemarksBy(remark.updated_by || '')
+    setRemarksBy(currentUserName || '')
     setRemarksModalVisible(true)
   }
 
@@ -725,6 +725,17 @@ function GHprojects() {
   const handleSubmitPayment = async (values) => {
     setSubmittingPayment(true)
     try {
+      if (!editingPayment) {
+        message.error('You do not have permission to add new payments')
+        return
+      }
+      let username = 'Unknown'
+      try {
+        const ppmUser = JSON.parse(localStorage.getItem('ppm_user'))
+        username = ppmUser?.name || 'Unknown'
+      } catch (e) {
+        username = 'Unknown'
+      }
       const payload = {
         invoice_no: values.invoice_no || '',
         gross_amount: values.gross_amount || '',
@@ -832,19 +843,7 @@ function GHprojects() {
     { title: 'LD', dataIndex: 'ld', width: 90 },
     { title: 'Balance', dataIndex: 'bal', width: 90 },
     { title: 'Status', dataIndex: 'follow_up_status', width: 150 },
-    {
-      title: 'Actions',
-      width: 120,
-      fixed: 'right',
-      render: (_, record) => (
-        <Space>
-          <Button size="small" icon={<EditOutlined />} onClick={() => handleOpenPaymentModal(stage, record)}>Edit</Button>
-          <Popconfirm title="Delete payment?" onConfirm={() => handleDeletePayment(record.id)}>
-            <Button danger size="small" icon={<DeleteOutlined />}>Delete</Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
+    
   ]
 
   const formatDate = (date) => (date ? formatDateTime(date) : 'N/A')
@@ -923,7 +922,7 @@ function GHprojects() {
                 const accessList = getStageAccessList(stage)
                 const canUpload = accessList.includes('upload')
                 const canAddRemarks = accessList.includes('add remarks')
-                const canAddPayments = accessList.includes('add payments')
+                const canAddPayments = false
                 const canViewAllotment = accessList.includes('view allotment sheet')
 
                 return (
@@ -1157,7 +1156,7 @@ function GHprojects() {
         >
           <Space direction="vertical" size="large" className="w-full">
             <TextArea placeholder="Enter your remarks *" value={remarksText} onChange={(e) => setRemarksText(e.target.value)} rows={4} />
-            <Input placeholder="Your Name *" value={remarksBy} onChange={(e) => setRemarksBy(e.target.value)} />
+            <Input placeholder="Your Name *" value={remarksBy} disabled />
           </Space>
         </Modal>
 
