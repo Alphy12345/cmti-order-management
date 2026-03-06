@@ -235,20 +235,51 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
         .filter(
             or_(
                 func.lower(Proposal.quotation_given_by_name) == name_lower,
-                func.lower(Proposal.project_co_ordinator) == name_lower
-            ) , Proposal.is_acknowledged == True
+                func.lower(Proposal.project_co_ordinator) == name_lower,
+            ),
+            Proposal.is_acknowledged == True,
         )
-        .distinct(Proposal.id)   # ensure unique results by ID
+        .distinct(Proposal.id)  # ensure unique results by ID
         .all()
     )
 
     if not proposals:
         raise HTTPException(
             status_code=404,
-            detail=f"No proposals found for '{name}' in quotation_given_by_name OR project_co_ordinator"
+            detail=(
+                f"No proposals found for '{name}' in quotation_given_by_name "
+                f"OR project_co_ordinator"
+            ),
         )
 
-    return proposals
+    # Serialize proposals and attach payments list as plain dicts
+    result: List[Dict[str, Any]] = []
+    for proposal in proposals:
+        proposal_data = {
+            key: value
+            for key, value in proposal.__dict__.items()
+            if not key.startswith("_")
+        }
+
+        payments = (
+            db.query(Payment)
+            .filter(Payment.project_id == proposal.id)
+            .all()
+        )
+
+        payments_data: List[Dict[str, Any]] = []
+        for payment in payments:
+            payment_dict = {
+                key: value
+                for key, value in payment.__dict__.items()
+                if not key.startswith("_")
+            }
+            payments_data.append(payment_dict)
+
+        proposal_data["payments"] = payments_data
+        result.append(proposal_data)
+
+    return result
 
 
 
