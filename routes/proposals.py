@@ -1,8 +1,10 @@
 from typing import Any, Dict, List, Optional
-
+ 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func , desc , or_
+from sqlalchemy import inspect as sa_inspect
 
 from db import get_db
 from models.model import Document, Payment, Progress, Proposal, Stage , MasterProposal
@@ -43,6 +45,59 @@ def sanitize_amount(val):
 
 
 router = APIRouter(prefix="/proposals", tags=["Proposals"])
+
+
+@router.get("/live-export")
+def live_export_proposals(
+    db: Session = Depends(get_db),
+):
+    proposals = (
+        db.query(Proposal)
+        .filter(Proposal.is_acknowledged == True)
+        .order_by(desc(Proposal.id))
+        .all()
+    )
+
+    proposal_columns = [c.name for c in Proposal.__table__.columns]
+
+    def _proposal_label(column_name: str) -> str:
+        return column_name.replace('_', ' ').title()
+
+    def _to_str(value: Any) -> str:
+        if value is None:
+            return ""
+        return str(value)
+
+    result: List[Dict[str, Any]] = []
+    for proposal in proposals:
+        payments = (
+            db.query(Payment)
+            .filter(Payment.project_id == proposal.id)
+            .order_by(Payment.id)
+            .all()
+        )
+
+        row: Dict[str, Any] = {}
+        for col in proposal_columns:
+            row[_proposal_label(col)] = _to_str(getattr(proposal, col, None))
+
+        for i, pay in enumerate(payments, 1):
+            row[f"Inv {i} Inv#"] = _to_str(pay.invoice_no)
+            row[f"Inv {i} Inv Date"] = _to_str(pay.invoice_date)
+            row[f"Inv {i} Gross"] = _to_str(pay.gross_amount)
+            row[f"Inv {i} GST Amt"] = _to_str(pay.get_amount)
+            row[f"Inv {i} Amt Claimed"] = _to_str(pay.amount_claimed)
+            row[f"Inv {i} Amt Recd"] = _to_str(pay.amount_recieved)
+            row[f"Inv {i} Recd Date"] = _to_str(pay.recieved_date)
+            row[f"Inv {i} TDS"] = _to_str(pay.tds)
+            row[f"Inv {i} GST TDS"] = _to_str(pay.get_tds)
+            row[f"Inv {i} LD"] = _to_str(pay.ld)
+            row[f"Inv {i} Balance"] = _to_str(pay.bal)
+            row[f"Inv {i} Status"] = _to_str(pay.follow_up_status)
+
+        result.append(row)
+
+    return JSONResponse(content=jsonable_encoder(result))
 
 
 # ------------------------------
@@ -100,7 +155,7 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
 # ------------------------------
 # LIST ALL PROPOSALS
 # ------------------------------
-@router.get("/", response_model=List[ProposalResponse])
+@router.get("/")
 def list_proposals(
     db: Session = Depends(get_db),
     date_field: Optional[str] = None,
@@ -252,33 +307,43 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
             ),
         )
 
-    # Serialize proposals and attach payments list as plain dicts
-    result: List[Dict[str, Any]] = []
+    # Serialize proposals with payments data
+    result = []
     for proposal in proposals:
+        # Serialize proposal data
         proposal_data = {
             key: value
             for key, value in proposal.__dict__.items()
             if not key.startswith("_")
         }
-
-        payments = (
-            db.query(Payment)
-            .filter(Payment.project_id == proposal.id)
-            .all()
-        )
-
-        payments_data: List[Dict[str, Any]] = []
+        
+        # Get all payments for this proposal
+        payments = db.query(Payment).filter(
+            Payment.project_id == proposal.id
+        ).all()
+        
+        # Serialize payments data
+        payments_data = []
         for payment in payments:
             payment_dict = {
                 key: value
                 for key, value in payment.__dict__.items()
                 if not key.startswith("_")
             }
+            
+            # Add stage name if stage_id exists
+            if payment.stage_id:
+                stage = db.query(Stage).filter(Stage.id == payment.stage_id).first()
+                payment_dict["stage_name"] = stage.name if stage else None
+            else:
+                payment_dict["stage_name"] = None
+                
             payments_data.append(payment_dict)
-
+        
+        # Combine proposal with its payments
         proposal_data["payments"] = payments_data
         result.append(proposal_data)
-
+    
     return result
 
 
@@ -331,7 +396,18 @@ def update_proposal(
     proposal_id=proposal.id,
     trigerred_by = "admin"
 )
-    return proposal
+    # Build response with payments as dicts (ProposalResponse expects List[dict])
+    mapper = sa_inspect(Proposal).mapper
+    proposal_data = {
+        attr.key: getattr(proposal, attr.key)
+        for attr in mapper.column_attrs
+    }
+    payments = db.query(Payment).filter(Payment.project_id == proposal.id).all()
+    proposal_data["payments"] = [
+        {k: v for k, v in p.__dict__.items() if not k.startswith("_")}
+        for p in payments
+    ]
+    return proposal_data
 
 
 # ------------------------------
@@ -574,6 +650,11 @@ def bulk_create_proposals(
             data["revised_negotiated"] = revised_flag
         if revised_date is not None:
             data["revised_negotiated_quote_date"] = revised_date
+        
+        # Handle status field from Excel (case-insensitive)
+        status_value = row.get("status") or row.get("Status")
+        if status_value is not None:
+            data["status"] = str(status_value).strip() if status_value else None
             
         # Set acknowledged flag for bulk imports
         data["is_acknowledged"] = True
@@ -616,7 +697,44 @@ def get_proposals_by_centre(centre: str, db: Session = Depends(get_db)):
             detail=f"No proposals found for centre = '{centre}'"
         )
 
-    return proposals
+    # Serialize proposals with payments data
+    result = []
+    for proposal in proposals:
+        # Serialize proposal data
+        proposal_data = {
+            key: value
+            for key, value in proposal.__dict__.items()
+            if not key.startswith("_")
+        }
+        
+        # Get all payments for this proposal
+        payments = db.query(Payment).filter(
+            Payment.project_id == proposal.id
+        ).all()
+        
+        # Serialize payments data
+        payments_data = []
+        for payment in payments:
+            payment_dict = {
+                key: value
+                for key, value in payment.__dict__.items()
+                if not key.startswith("_")
+            }
+            
+            # Add stage name if stage_id exists
+            if payment.stage_id:
+                stage = db.query(Stage).filter(Stage.id == payment.stage_id).first()
+                payment_dict["stage_name"] = stage.name if stage else None
+            else:
+                payment_dict["stage_name"] = None
+                
+            payments_data.append(payment_dict)
+        
+        # Combine proposal with its payments
+        proposal_data["payments"] = payments_data
+        result.append(proposal_data)
+    
+    return result
 
 
 

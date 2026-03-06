@@ -54,6 +54,7 @@ class ProposalBase(BaseModel):
     project_co_ordinator: Optional[str] = None
     updated_by: Optional[str] = None
     group: Optional[str] = None
+    status: Optional[str] = None
 
     class Config:
         populate_by_name = True
