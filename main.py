@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from starlette.middleware.cors import CORSMiddleware
 from routes import masterproposals 
 from db import Base, engine
@@ -18,8 +19,11 @@ from routes.centres import router as centres_router
 from routes.groups import router as groups_router
 from routes.masterproposals import router as master_proposals_router
 from routes.notification import router as notification_router
+from routes.customers import router as customers_router
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
+
 
 app = FastAPI(title="Order Management Backend")
 
@@ -45,3 +49,4 @@ app.include_router(centres_router)
 app.include_router(groups_router)
 app.include_router(master_proposals_router)
 app.include_router(notification_router)
+app.include_router(customers_router)

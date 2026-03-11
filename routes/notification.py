@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from db import get_db
 from models.model import Notification, Proposal, Document
 from pydantic import BaseModel
@@ -46,8 +47,17 @@ class NotificationResponse(BaseModel):
 # ---------------------------
 
 @router.get("/", response_model=List[NotificationResponse])
-def get_notifications(db: Session = Depends(get_db)):
-    notifications = db.query(Notification).all()
+def get_notifications(
+    user_name: str,
+    role: str,
+    db: Session = Depends(get_db)
+):
+    notifications = db.query(Notification).filter(
+        or_(
+            Notification.user_name == user_name,  # personal notifications
+            Notification.user_name == role         # role-based notifications
+        )
+    ).order_by(Notification.created_at.desc()).all()
     response_data = []
 
     for n in notifications:

@@ -6,8 +6,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func , desc , or_
 from sqlalchemy import inspect as sa_inspect
 
+
 from db import get_db
-from models.model import Document, Payment, Progress, Proposal, Stage , MasterProposal
+from models.model import Document, Payment, Progress, Proposal, Stage, MasterProposal, Notification
 from pydantic_schema.request import (
     ProposalCreate,
     ProposalUpdate,
@@ -278,31 +279,58 @@ def get_proposals_with_payments(db: Session = Depends(get_db)):
 
 
 # ------------------------------
-# GET PROPOSALS BY NAME
+# GET PROPOSALS BY NAME (with role-based extension for gh/ch)
 # ------------------------------
 @router.get("/by-name/{name}", response_model=List[ProposalResponse])
 def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
-
+    from models.user_model import User
+    
     name_lower = name.lower()
-
-    proposals = (
+    
+    # First, look up the user's role
+    user = db.query(User).filter(func.lower(User.name) == name_lower).first()
+    user_role = user.role.lower() if user and user.role else None
+    
+    # Collect all names to search for (starts with the requested name)
+    names_to_search = [name_lower]
+    
+    # If user has 'gh' or 'ch' role, fetch all users with same role
+    if user_role in ['gh', 'ch']:
+        role_users = db.query(User).filter(
+            func.lower(User.role) == user_role,
+            func.lower(User.name) != name_lower  # Exclude the original user
+        ).all()
+        for role_user in role_users:
+            names_to_search.append(role_user.name.lower())
+    
+    # Fetch proposals for all collected names
+    proposals_query = (
         db.query(Proposal)
         .filter(
             or_(
-                func.lower(Proposal.quotation_given_by_name) == name_lower,
-                func.lower(Proposal.project_co_ordinator) == name_lower,
+                func.lower(Proposal.quotation_given_by_name).in_(names_to_search),
+                func.lower(Proposal.project_co_ordinator).in_(names_to_search),
             ),
             Proposal.is_acknowledged == True,
         )
-        .distinct(Proposal.id)  # ensure unique results by ID
+        .distinct(Proposal.id)
         .all()
     )
+    
+    # Remove duplicates (should already be unique due to distinct, but safety check)
+    seen_ids = set()
+    proposals = []
+    for p in proposals_query:
+        if p.id not in seen_ids:
+            seen_ids.add(p.id)
+            proposals.append(p)
 
     if not proposals:
+        role_info = f" (including all {user_role.upper()} role users)" if user_role in ['gh', 'ch'] else ""
         raise HTTPException(
             status_code=404,
             detail=(
-                f"No proposals found for '{name}' in quotation_given_by_name "
+                f"No proposals found for '{name}'{role_info} in quotation_given_by_name "
                 f"OR project_co_ordinator"
             ),
         )
@@ -316,6 +344,10 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
             for key, value in proposal.__dict__.items()
             if not key.startswith("_")
         }
+        
+        # Ensure group field is populated
+        if not proposal_data.get('group') and proposal.group:
+            proposal_data['group'] = proposal.group
         
         # Get all payments for this proposal
         payments = db.query(Payment).filter(
@@ -345,6 +377,91 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
         result.append(proposal_data)
     
     return result
+
+
+
+
+# ------------------------------
+# ANALYTICS: PROPOSAL VS PROJECT CONVERSION
+# ------------------------------
+@router.get("/proposal-vs-project")
+def proposal_vs_project(db: Session = Depends(get_db)):
+    """
+    Get count of proposals converted to projects vs those that remained as proposals.
+    
+    Converted to Project = proposals where project_number is NOT null AND NOT empty string
+    Remained as Proposal = proposals where project_number IS null OR empty string
+    """
+    total = db.query(Proposal).count()
+    converted = db.query(Proposal).filter(
+        Proposal.project_number.isnot(None),
+        Proposal.project_number != ''
+    ).count()
+    remained = total - converted
+    return {
+        "converted_to_project": converted,
+        "remained_as_proposal": remained,
+        "total": total
+    }
+
+
+# ------------------------------
+# ANALYTICS: TECHNICALLY COMPLETED PROJECTS BY DEPARTMENT
+# ------------------------------
+@router.get("/technically-completed-by-dept")
+def technically_completed_by_dept(db: Session = Depends(get_db)):
+    """
+    Get count of technically completed projects grouped by department/center.
+    
+    Filters proposals where technical_completed_year IS NOT NULL AND NOT empty.
+    Groups by center (department) and returns count per department.
+    """
+    results = db.query(
+        Proposal.center,
+        func.count(Proposal.id).label('count')
+    ).filter(
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != ''
+    ).group_by(
+        Proposal.center
+    ).all()
+
+    return [
+        {
+            "department": r.center or "Unknown",
+            "count": r.count
+        }
+        for r in results
+    ]
+
+
+# ------------------------------
+# ANALYTICS: ONGOING PROJECTS BY DEPARTMENT
+# ------------------------------
+@router.get("/ongoing-by-dept")
+def ongoing_by_dept(db: Session = Depends(get_db)):
+    """
+    Get count of ongoing projects grouped by department/center.
+    
+    Filters proposals where status = 'Ongoing'.
+    Groups by center (department) and returns count per department.
+    """
+    results = db.query(
+        Proposal.center,
+        func.count(Proposal.id).label('count')
+    ).filter(
+        Proposal.status == 'Ongoing'
+    ).group_by(
+        Proposal.center
+    ).all()
+
+    return [
+        {
+            "department": r.center or "Unknown",
+            "count": r.count
+        }
+        for r in results
+    ]
 
 
 
@@ -874,4 +991,160 @@ def update_acknowledgement(
         "is_acknowledged": proposal.is_acknowledged
     }
 
-    
+
+# ------------------------------
+# DELIVERY DATE NOTIFICATION CHECK
+# Triggered on every page load — no background scheduler
+# ------------------------------
+@router.post("/check-delivery-notifications")
+def trigger_delivery_notifications(db: Session = Depends(get_db)):
+    """
+    Check all proposals for upcoming/overdue deliveries and create notifications.
+    Called from frontend on every page load to ensure fresh notifications.
+    """
+    from datetime import datetime, date
+    from models.user_model import User
+
+    today = date.today()
+
+    # Get all admin users' names
+    admin_users = db.query(User).filter(
+        User.role == 'admin'
+    ).all()
+    admin_names = [u.name for u in admin_users if u and u.name]
+
+    # Get all incomplete proposals (NULL or empty string means incomplete)
+    from sqlalchemy import or_
+    proposals = db.query(Proposal).filter(
+        or_(
+            Proposal.technical_completed_year.is_(None),
+            Proposal.technical_completed_year == ''
+        ),
+        or_(
+            Proposal.financial_completed_year.is_(None),
+            Proposal.financial_completed_year == ''
+        )
+    ).all()
+
+    for proposal in proposals:
+        delivery_str = None
+        if proposal.extended_delivery_date and str(proposal.extended_delivery_date).strip():
+            delivery_str = str(proposal.extended_delivery_date).strip()
+        elif proposal.delivery_date and str(proposal.delivery_date).strip():
+            delivery_str = str(proposal.delivery_date).strip()
+
+        if not delivery_str:
+            continue
+
+        delivery_date = None
+        for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d.%m.%Y'):
+            try:
+                delivery_date = datetime.strptime(delivery_str, fmt).date()
+                break
+            except:
+                continue
+
+        if not delivery_date:
+            continue
+
+        days_remaining = (delivery_date - today).days
+
+        if days_remaining > 30:
+            continue
+
+        project_ref = proposal.project_number or f"ID {proposal.id}"
+        if days_remaining > 0:
+            message = f"Project {project_ref} - Delivery in {days_remaining} days ({delivery_date.strftime('%d-%m-%Y')})"
+        elif days_remaining == 0:
+            message = f"Project {project_ref} - Delivery is TODAY ({delivery_date.strftime('%d-%m-%Y')})"
+        else:
+            message = f"Project {project_ref} - Overdue by {abs(days_remaining)} days (was due {delivery_date.strftime('%d-%m-%Y')})"
+
+        # Recipients: roles and coordinator name
+        recipients = ['admin']  # always notify admin role
+
+        # Add gh role if proposal has a group
+        if proposal.group:
+            recipients.append('gh')
+
+        # Add project coordinator name (stored as name in proposals table)
+        if proposal.project_co_ordinator and str(proposal.project_co_ordinator).strip():
+            coord = str(proposal.project_co_ordinator).strip()
+            if coord not in recipients:
+                recipients.append(coord)
+
+        # Delete old system-triggered notifications and create fresh ones
+        # This ensures message updates daily with correct remaining days
+        for recipient in recipients:
+            db.query(Notification).filter(
+                Notification.related_proposal_id == proposal.id,
+                Notification.user_name == recipient,
+                Notification.trigerred_by == 'system'
+            ).delete()
+
+            notif = Notification(
+                user_name=recipient,  # stores 'admin', 'gh', or coordinator name
+                message=message,
+                is_read=0,
+                related_proposal_id=proposal.id,
+                trigerred_by='system'
+            )
+            db.add(notif)
+
+    # -------------------------------------------------
+    # INVOICE OVERDUE NOTIFICATIONS (15+ days)
+    # Only for admin role
+    # -------------------------------------------------
+    payments = db.query(Payment).filter(
+        Payment.invoice_date.isnot(None),
+        Payment.invoice_date != ''
+    ).all()
+
+    for payment in payments:
+        invoice_date_str = payment.invoice_date.strip()
+        if not invoice_date_str:
+            continue
+
+        # Parse invoice date
+        invoice_date = None
+        for fmt in ('%Y-%m-%d', '%d-%m-%Y', '%d/%m/%Y', '%m/%d/%Y', '%d.%m.%Y'):
+            try:
+                invoice_date = datetime.strptime(invoice_date_str, fmt).date()
+                break
+            except:
+                continue
+
+        if not invoice_date:
+            continue
+
+        # Check if 15+ days overdue
+        days_overdue = (today - invoice_date).days
+        if days_overdue < 15:
+            continue
+
+        # Get project info
+        proposal = db.query(Proposal).filter(Proposal.id == payment.project_id).first()
+        project_ref = proposal.project_number if proposal and proposal.project_number else f"ID {payment.project_id}"
+        invoice_ref = payment.invoice_no if payment.invoice_no else f"Invoice #{payment.id}"
+
+        message = f"Invoice Alert: {invoice_ref} for Project {project_ref} is {days_overdue} days overdue (dated {invoice_date.strftime('%d-%m-%Y')})"
+
+        # Delete old invoice notification for this payment (using proposal_id + triggered_by)
+        db.query(Notification).filter(
+            Notification.related_proposal_id == payment.project_id,
+            Notification.user_name == 'admin',
+            Notification.trigerred_by == 'system-invoice'
+        ).delete()
+
+        # Create notification for admin only (no related_document_id since payments aren't documents)
+        notif = Notification(
+            user_name='admin',
+            message=message,
+            is_read=0,
+            related_proposal_id=payment.project_id,
+            trigerred_by='system-invoice'
+        )
+        db.add(notif)
+
+    db.commit()
+    return {"status": "ok"}

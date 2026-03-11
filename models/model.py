@@ -233,3 +233,21 @@ class OTP(Base):
     created_at = Column(TIMESTAMP(timezone=False), default=func.now())
     expires_at = Column(TIMESTAMP(timezone=False))
     is_used = Column(Boolean, default=False)
+
+
+# -------------------------------------------------
+# CUSTOMER TABLE
+# -------------------------------------------------
+class Customer(Base):
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    name = Column(String, nullable=False, index=True)
+    customer_type = Column(String, nullable=True)
+    address = Column(String, nullable=True)
+    email = Column(String, nullable=True)
+    phone_no = Column(String, nullable=True)
+    alternate_contact_details = Column(String, nullable=True)
+
+    created_at = Column(DateTime(timezone=False), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=False), server_default=func.now(), onupdate=func.now(), nullable=False)
