@@ -23,10 +23,19 @@ function Analytics() {
   const pie1Ref = useRef(null)
   const pie2Ref = useRef(null)
   const pie3Ref = useRef(null)
+  const pie4Ref = useRef(null)
+  const pie5Ref = useRef(null)
+  const pie6Ref = useRef(null)
   const pie1Instance = useRef(null)
   const pie2Instance = useRef(null)
   const pie3Instance = useRef(null)
+  const pie4Instance = useRef(null)
+  const pie5Instance = useRef(null)
+  const pie6Instance = useRef(null)
   const [proposalCount, setProposalCount] = useState(0)
+  const [conversionData, setConversionData] = useState(null)
+  const [techCompletedByDept, setTechCompletedByDept] = useState(null)
+  const [ongoingByDept, setOngoingByDept] = useState(null)
 
   useEffect(() => {
     const fetchProposals = async () => {
@@ -76,9 +85,60 @@ function Analytics() {
       }
     }
 
+    const fetchConversionData = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/proposals/proposal-vs-project`, {
+          headers: { accept: 'application/json' },
+        })
+        if (!response.ok) {
+          throw new Error('Unable to fetch conversion data')
+        }
+        const payload = await response.json()
+        setConversionData(payload)
+      } catch (error) {
+        console.error(error)
+        message.error(error.message || 'Unable to fetch conversion data')
+      }
+    }
+
+    const fetchTechCompletedByDept = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/proposals/technically-completed-by-dept`, {
+          headers: { accept: 'application/json' },
+        })
+        if (!response.ok) {
+          throw new Error('Unable to fetch technically completed by department')
+        }
+        const payload = await response.json()
+        setTechCompletedByDept(payload)
+      } catch (error) {
+        console.error(error)
+        message.error(error.message || 'Unable to fetch technically completed by department')
+      }
+    }
+
+    const fetchOngoingByDept = async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/proposals/ongoing-by-dept`, {
+          headers: { accept: 'application/json' },
+        })
+        if (!response.ok) {
+          throw new Error('Unable to fetch ongoing by department')
+        }
+        const payload = await response.json()
+        setOngoingByDept(payload)
+      } catch (error) {
+        console.error(error)
+        message.error(error.message || 'Unable to fetch ongoing by department')
+      }
+    }
+
     fetchProposals()
     fetchMasterProposals()
     fetchProposalCount()
+    fetchConversionData()
+    fetchTechCompletedByDept()
+    fetchOngoingByDept()
   }, [])
 
   const statistics = useMemo(() => {
@@ -247,6 +307,30 @@ function Analytics() {
     return { labels, data }
   }, [proposals])
 
+  const pie4 = useMemo(() => {
+    if (!conversionData) return { labels: [], data: [] }
+    return {
+      labels: ['Converted to Project', 'Remained as Proposal'],
+      data: [conversionData.converted_to_project, conversionData.remained_as_proposal]
+    }
+  }, [conversionData])
+
+  const pie5 = useMemo(() => {
+    if (!techCompletedByDept || techCompletedByDept.length === 0) return { labels: [], data: [] }
+    return {
+      labels: techCompletedByDept.map(item => item.department),
+      data: techCompletedByDept.map(item => item.count)
+    }
+  }, [techCompletedByDept])
+
+  const pie6 = useMemo(() => {
+    if (!ongoingByDept || ongoingByDept.length === 0) return { labels: [], data: [] }
+    return {
+      labels: ongoingByDept.map(item => item.department),
+      data: ongoingByDept.map(item => item.count)
+    }
+  }, [ongoingByDept])
+
   useEffect(() => {
     if (!chartRef.current) return
     if (chartInstanceRef.current) {
@@ -397,6 +481,67 @@ function Analytics() {
     renderPie(pie1Ref, pie1Instance, pie1, 'Projects by Project Number')
     renderPie(pie2Ref, pie2Instance, pie2, 'Projects by Department')
     renderPie(pie3Ref, pie3Instance, pie3, 'Financially Completed Projects by Department')
+    renderPie(pie5Ref, pie5Instance, pie5, 'Technically Completed Projects by Department')
+    renderPie(pie6Ref, pie6Instance, pie6, 'Ongoing Projects by Department')
+
+    // Custom render for pie4 with specific colors
+    if (pie4Ref.current && !pie4Instance.current && pie4.labels.length > 0) {
+      const ctx4 = pie4Ref.current.getContext('2d')
+      pie4Instance.current = new Chart(ctx4, {
+        type: 'pie',
+        data: {
+          labels: pie4.labels,
+          datasets: [
+            {
+              data: pie4.data,
+              backgroundColor: ['#4CAF50', '#F44336'],
+              borderColor: '#ffffff',
+              borderWidth: 1,
+            },
+          ],
+        },
+        options: {
+          plugins: {
+            legend: {
+              position: 'bottom',
+              labels: {
+                boxWidth: 14,
+                padding: 12,
+                font: { size: 14 }
+              }
+            },
+            title: {
+              display: true,
+              text: 'Proposal vs Project Conversion',
+              font: { size: 16 }
+            },
+            tooltip: {
+              enabled: true,
+              callbacks: {
+                label: (ctx) => {
+                  const label = ctx.label || ''
+                  const value = ctx.parsed || 0
+                  const sum = ctx.dataset.data.reduce((a, b) => a + b, 0)
+                  const pct = sum ? ((value / sum) * 100).toFixed(1) : '0.0'
+                  return `${label}: ${value} (${pct}%)`
+                }
+              }
+            },
+          },
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            animateRotate: true,
+            duration: 700,
+            easing: 'easeOutQuart'
+          },
+        },
+      })
+    } else if (pie4Instance.current && pie4.labels.length > 0) {
+      pie4Instance.current.data.labels = pie4.labels
+      pie4Instance.current.data.datasets[0].data = pie4.data
+      pie4Instance.current.update()
+    }
 
     return () => {
       if (pie1Instance.current) {
@@ -411,8 +556,20 @@ function Analytics() {
         pie3Instance.current.destroy()
         pie3Instance.current = null
       }
+      if (pie4Instance.current) {
+        pie4Instance.current.destroy()
+        pie4Instance.current = null
+      }
+      if (pie5Instance.current) {
+        pie5Instance.current.destroy()
+        pie5Instance.current = null
+      }
+      if (pie6Instance.current) {
+        pie6Instance.current.destroy()
+        pie6Instance.current = null
+      }
     }
-  }, [pie1, pie2, pie3])
+  }, [pie1, pie2, pie3, pie4, pie5, pie6])
 
   return (
     <div style={{ padding: '24px', backgroundColor: '#f0f2f5', minHeight: '100vh' }}>
@@ -522,6 +679,40 @@ function Analytics() {
           <Card title="Financially Completed Projects by Department">
             <div style={{ height: '350px' }}>
               <canvas ref={pie3Ref}></canvas>
+            </div>
+          </Card>
+        </Col>
+      </Row>
+
+      <Row gutter={[16, 16]} style={{ marginTop: '24px' }}>
+        <Col xs={24} lg={8}>
+          <Card title="Ongoing Projects by Department">
+            <div style={{ height: '350px' }}>
+              <canvas ref={pie6Ref}></canvas>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card title="Technically Completed Projects by Department">
+            <div style={{ height: '350px' }}>
+              <canvas ref={pie5Ref}></canvas>
+            </div>
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card title="Proposal vs Project Conversion">
+            <div style={{ height: '350px' }}>
+              <canvas ref={pie4Ref}></canvas>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '24px', marginTop: '12px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '12px', height: '12px', backgroundColor: '#4CAF50', borderRadius: '50%' }}></div>
+                <span>Converted: {conversionData?.converted_to_project || 0}</span>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{ width: '12px', height: '12px', backgroundColor: '#F44336', borderRadius: '50%' }}></div>
+                <span>Remained: {conversionData?.remained_as_proposal || 0}</span>
+              </div>
             </div>
           </Card>
         </Col>

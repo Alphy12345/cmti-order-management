@@ -316,6 +316,12 @@ function Proposals() {
       console.error('Failed to read user from localStorage', error)
     }
 
+    // Trigger delivery notification check on every page load
+    fetch(`${API_BASE_URL}/proposals/check-delivery-notifications`, {
+      method: 'POST',
+      headers: { accept: 'application/json' },
+    }).catch(err => console.log('Notification check error:', err))
+
     fetchProposals()
     fetchProposalCount()
     fetchCentres()
@@ -921,7 +927,7 @@ function Proposals() {
         } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-              🟠 Due Today
+               Due Today
             </span>
           )
         }

@@ -45,12 +45,16 @@ function Sidebar() {
       : 'proposals'
 
   let userName = ''
+  let userRole = ''
   try {
     const rawUser = window.localStorage.getItem('ppm_user')
     if (rawUser) {
       const parsedUser = JSON.parse(rawUser)
       if (parsedUser && parsedUser.name) {
         userName = parsedUser.name
+      }
+      if (parsedUser && parsedUser.role) {
+        userRole = parsedUser.role
       }
     }
   } catch (error) {
@@ -69,7 +73,9 @@ function Sidebar() {
           `${API_BASE_URL}/notifications/by-quotation-user/?name=${encodeURIComponent(userName || '')}`,
         )
       }
-      return axios.get(`${API_BASE_URL}/notifications/`)
+      return axios.get(
+        `${API_BASE_URL}/notifications/?user_name=${encodeURIComponent(userName || '')}&role=${encodeURIComponent(userRole || '')}`
+      )
     }
 
     const filterUnread = (items) => {
@@ -90,7 +96,7 @@ function Sidebar() {
         setNotificationCount(unreadCount)
       })
       .catch((error) => console.error('Error fetching notifications:', error));
-  }, [normalizedBasePath, userName]);
+  }, [normalizedBasePath, userName, userRole]);
 
   const handleLogout = () => {
     try {

@@ -23,6 +23,7 @@ import {
   Row,
   Col,
   Statistic,
+  AutoComplete,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -130,13 +131,80 @@ const COORDINATOR_ADD_FIELDS = [
   'revised_negotiated_quote_amount',
   'quotation_given_by_name',
   'quotation_given_by_department',
+  'center',
+  'group',
 ]
 
-const FORM_FIELDS = PROPOSAL_FIELDS.filter((field) => field.inForm !== false)
-const TABLE_FIELDS = PROPOSAL_FIELDS
+// Restricted columns for GH/CH (operational view - no quotation, no payment, no metadata)
+const TABLE_FIELDS = [
+  { name: 'id', label: 'SL NO', width: 80, fixed: 'left', render: (text, record, index) => index + 1 },
+  { name: 'project_number', label: 'Project Number', width: 140 },
+  { name: 'customer_name', label: 'Customer Name', width: 180 },
+  { name: 'order_date', label: 'Order Date', width: 130 },
+  { name: 'delivery_date', label: 'Delivery Date', width: 140 },
+  { name: 'extended_delivery_date', label: 'Extended Delivery', width: 150 },
+  { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 170 },
+  { name: 'dispatch_date', label: 'Dispatch Date', width: 130 },
+  { name: 'key_deliverables', label: 'Key Deliverables', width: 220, input: 'textarea' },
+  { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 180 },
+  { name: 'center', label: 'Center', width: 120 },
+  { name: 'group', label: 'Group', width: 120 },
+  { name: 'status', label: 'Status', width: 130, input: 'select' },
+  { name: 'technical_completed_year', label: 'Technical Completion', width: 160 },
+  { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
+  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
+  { name: 'closer_report', label: 'Closer Report', width: 180, input: 'textarea' },
+]
+
+// All fields for data mapping (internal use)
+const ALL_FIELDS = [
+  { name: 'id', label: 'SL NO', width: 120, fixed: 'left', inForm: false },
+  { name: 'enquiry_date', label: 'Enquiry Date', width: 150 },
+  { name: 'customer_type', label: 'Customer Type', width: 170 },
+  { name: 'customer_name', label: 'Customer Name', width: 170 },
+  { name: 'address', label: 'Address', width: 240 },
+  { name: 'email', label: 'Email', width: 200 },
+  { name: 'phone_no', label: 'Phone No.', width: 150 },
+  { name: 'alternate_contact_details', label: 'Alternate Contact', width: 220 },
+  { name: 'request_type', label: 'Request Type', width: 160, render: (value) => (value ? <Tag color="blue">{value}</Tag> : null) },
+  { name: 'email_reference', label: 'Email Reference', width: 200 },
+  { name: 'quote_reference', label: 'Quote Reference', width: 190 },
+  { name: 'quote_description', label: 'Quote Description', width: 240, input: 'textarea' },
+  { name: 'quote_date', label: 'Quote Date', width: 140 },
+  { name: 'quote_amount', label: 'Quote Amount', width: 160 },
+  { name: 'revised_negotiated', label: 'Revised / Negotiated', width: 190, apiName: 'revised/negotiated' },
+  { name: 'revised_negotiated_quote_date', label: 'Revised Quote Date', width: 190, apiName: 'revised/negotiated_quote_date' },
+  { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
+  { name: 'quotation_given_by_department', label: 'Department', width: 180 },
+  { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
+  { name: 'project_number', label: 'Project Number', width: 140 },
+  { name: 'party_name', label: 'Party Name', width: 200 },
+  { name: 'activity', label: 'Activity', width: 160 },
+  { name: 'key_deliverables', label: 'Key Deliverables', width: 240, input: 'textarea' },
+  { name: 'order_number', label: 'Order Number', width: 150 },
+  { name: 'order_date', label: 'Order Date', width: 150 },
+  { name: 'delivery_date', label: 'Delivery Date', width: 160 },
+  { name: 'extended_delivery_date', label: 'Extended Delivery', width: 190 },
+  { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 210 },
+  { name: 'order_value', label: 'Order Value', width: 170 },
+  { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260, input: 'textarea' },
+  { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
+  { name: 'center', label: 'Center', width: 150 },
+  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
+  { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
+  { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
+  { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
+  { name: 'status', label: 'Status', width: 150, input: 'select' },
+  { name: 'dispatch_date', label: 'Dispatch Date', width: 160 },
+  { name: 'ppm_remarks', label: 'PPM Remarks', width: 200, input: 'textarea' },
+  { name: 'created_at', label: 'Created At', width: 190, inForm: false },
+  { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
+  { name: 'updated_by', label: 'Updated By', width: 150, required: true },
+  { name: 'group', label: 'Group', width: 150 },
+]
 
 const getApiName = (name) => {
-  const field = PROPOSAL_FIELDS.find((item) => item.name === name)
+  const field = ALL_FIELDS.find((item) => item.name === name)
   return field?.apiName ?? name
 }
 
@@ -147,21 +215,19 @@ const uniqueKey = () =>
 
 const mapApiToUi = (record) => {
   const mapped = {}
-  TABLE_FIELDS.forEach((field) => {
+  ALL_FIELDS.forEach((field) => {
     const apiName = getApiName(field.name)
     mapped[field.name] = record?.[apiName] ?? ''
   })
   mapped.key = record?.id ?? uniqueKey()
-  // Preserve payments data for dynamic column rendering
-  mapped.payments = record?.payments || []
   return mapped
 }
 
 const mapUiToApi = (values) => {
   const payload = {}
-  FORM_FIELDS.forEach((field) => {
-    const apiName = getApiName(field.name)
-    payload[apiName] = values[field.name] ?? ''
+  COORDINATOR_ADD_FIELDS.forEach((fieldName) => {
+    const apiName = getApiName(fieldName)
+    payload[apiName] = values[fieldName] ?? ''
   })
   return payload
 }
@@ -178,6 +244,8 @@ function Proposals() {
 
   const [coordinatorModalOpen, setCoordinatorModalOpen] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [selectedRecord, setSelectedRecord] = useState(null)
   const [editingRecord, setEditingRecord] = useState(null)
 
   const [searchText, setSearchText] = useState('')
@@ -188,7 +256,20 @@ function Proposals() {
   const [projectCodePrefix, setProjectCodePrefix] = useState('')
   const [currentUserName, setCurrentUserName] = useState('')
   const [currentUserCenter, setCurrentUserCenter] = useState('')
+  const [currentUserGroup, setCurrentUserGroup] = useState('')
   const [proposalCount, setProposalCount] = useState(0)
+  const [customerOptions, setCustomerOptions] = useState([])
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
+
+  const openDetailModal = useCallback((record) => {
+    setSelectedRecord(record)
+    setDetailModalOpen(true)
+  }, [])
+
+  const closeDetailModal = useCallback(() => {
+    setDetailModalOpen(false)
+    setSelectedRecord(null)
+  }, [])
 
   const openEditModal = useCallback(
     (record) => {
@@ -267,6 +348,7 @@ function Proposals() {
             coordinatorName = parsedUser.name
             setCurrentUserName(parsedUser.name)
             setCurrentUserCenter(parsedUser.center || '')
+            setCurrentUserGroup(parsedUser.group || '')
             const encodedName = encodeURIComponent(parsedUser.name)
             url = `${API_BASE_URL}/proposals/by-name/${encodedName}`
           }
@@ -315,6 +397,12 @@ function Proposals() {
   }
 
   useEffect(() => {
+    // Trigger delivery notification check on every page load
+    fetch(`${API_BASE_URL}/proposals/check-delivery-notifications`, {
+      method: 'POST',
+      headers: { accept: 'application/json' },
+    }).catch(err => console.log('Notification check error:', err))
+
     fetchProposals()
     fetchProposalsCount()
   }, [fetchProposals])
@@ -323,11 +411,13 @@ function Proposals() {
   const openCoordinatorAddModal = () => {
     coordinatorForm.resetFields()
 
-    // Auto-fill read-only fields
+    // Auto-fill read-only fields including group and center
     if (currentUserName) {
       coordinatorForm.setFieldsValue({
         quotation_given_by_name: currentUserName,
         quotation_given_by_department: currentUserCenter ? currentUserCenter.toUpperCase() : '',
+        center: currentUserCenter || '',
+        group: currentUserGroup || '',
       })
     }
 
@@ -337,7 +427,54 @@ function Proposals() {
   const closeCoordinatorModal = () => {
     setCoordinatorModalOpen(false)
     coordinatorForm.resetFields()
+    setCustomerOptions([])
   }
+
+  // Search customers by name
+  const searchCustomers = useCallback(async (searchValue) => {
+    if (!searchValue || searchValue.trim().length < 2) {
+      setCustomerOptions([])
+      return
+    }
+
+    setCustomerSearchLoading(true)
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/customers/search?name=${encodeURIComponent(searchValue.trim())}`,
+        { headers: { accept: 'application/json' } }
+      )
+
+      if (!response.ok) throw new Error('Failed to search customers')
+
+      const customers = await response.json()
+      const options = customers.map((customer) => ({
+        value: customer.name,
+        label: `${customer.name} ${customer.customer_type ? `(${customer.customer_type})` : ''}`,
+        customer: customer,
+      }))
+      setCustomerOptions(options)
+    } catch (error) {
+      console.error('Customer search error:', error)
+      setCustomerOptions([])
+    } finally {
+      setCustomerSearchLoading(false)
+    }
+  }, [])
+
+  // Handle customer selection - auto-fill related fields
+  const handleCustomerSelect = useCallback((value, option) => {
+    const customer = option?.customer
+    if (customer) {
+      coordinatorForm.setFieldsValue({
+        customer_name: customer.name,
+        customer_type: customer.customer_type || '',
+        address: customer.address || '',
+        email: customer.email || '',
+        phone_no: customer.phone_no || '',
+        alternate_contact_details: customer.alternate_contact_details || '',
+      })
+    }
+  }, [coordinatorForm])
 
   // Submit new proposal via coordinator endpoint
   const handleCoordinatorSubmit = async (values) => {
@@ -509,24 +646,13 @@ function Proposals() {
 
   const columns = useMemo(() => {
     const dateFields = new Set([
-      'enquiry_date',
-      'quote_date',
-      'revised_negotiated_quote_date',
       'order_date',
       'delivery_date',
       'extended_delivery_date',
       'date_of_actual_commencement',
       'dispatch_date',
-      'created_at',
-      'updated_at',
       'technical_completed_year',
       'financial_completed_year',
-    ])
-
-    const amountFields = new Set([
-      'quote_amount',
-      'revised_negotiated_quote_amount',
-      'order_value',
     ])
 
     const base = TABLE_FIELDS.map((f) => {
@@ -572,7 +698,7 @@ function Proposals() {
 
       return {
         ...baseColumn,
-        render: f.render ?? (dateFields.has(f.name) ? (value) => formatDate(value) : amountFields.has(f.name) ? (value) => formatIndianNumber(value) : undefined),
+        render: f.render ?? (dateFields.has(f.name) ? (value) => formatDate(value) : undefined),
       }
     })
 
@@ -585,7 +711,7 @@ function Proposals() {
       key: 'overdue_days',
       dataIndex: 'overdue_days',
       title: 'Overdue Days',
-      width: 150,
+      width: 140,
       render: (_, record) => {
         const overdueDays = calculateOverdueDays(
           record.delivery_date,
@@ -597,7 +723,7 @@ function Proposals() {
         if (overdueDays > 0) {
           return (
             <span style={{ color: '#cf1322', fontWeight: 500 }}>
-               {overdueDays} days
+               {overdueDays} days overdue
             </span>
           )
         } else if (overdueDays < 0) {
@@ -621,55 +747,13 @@ function Proposals() {
       base.splice(extendedDeliveryIndex + 1, 0, overdueDaysColumn)
     }
 
-    // Calculate max payments across all proposals for dynamic columns
-    // Use 1 as minimum to always show at least Invoice 1 columns
-    const maxPayments = Math.max(...tableData.map(p => p.payments?.length || 0), 1)
-
-    // Payment sub-columns configuration
-    const paymentFields = [
-      { key: 'invoice_no', label: 'Inv#', width: 120 },
-      { key: 'invoice_date', label: 'Inv Date', width: 120 },
-      { key: 'gross_amount', label: 'Gross', width: 100 },
-      { key: 'get_amount', label: 'GST Amt', width: 100 },
-      { key: 'amount_claimed', label: 'Amt Claimed', width: 110 },
-      { key: 'amount_recieved', label: 'Amt Recd', width: 100 },
-      { key: 'recieved_date', label: 'Recd Date', width: 120 },
-      { key: 'tds', label: 'TDS', width: 80 },
-      { key: 'get_tds', label: 'GST TDS', width: 90 },
-      { key: 'ld', label: 'LD', width: 80 },
-      { key: 'bal', label: 'Balance', width: 100 },
-      { key: 'follow_up_status', label: 'Status', width: 120 },
-    ]
-
-    // Generate payment columns after ppm_remarks
-    const paymentColumns = []
-    for (let i = 0; i < maxPayments; i++) {
-      paymentFields.forEach((field) => {
-        paymentColumns.push({
-          key: `inv${i + 1}_${field.key}`,
-          dataIndex: 'payments',
-          title: `Inv ${i + 1} ${field.label}`,
-          width: field.width,
-          render: (_, record) => record.payments?.[i]?.[field.key] || '-',
-        })
-      })
-    }
-
-    // Find index of ppm_remarks and insert payment columns after it
-    const ppmRemarksIndex = base.findIndex(
-      (col) => col.key === 'ppm_remarks',
-    )
-    if (ppmRemarksIndex !== -1 && paymentColumns.length > 0) {
-      base.splice(ppmRemarksIndex + 1, 0, ...paymentColumns)
-    }
-
     return [
       ...base,
       {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 100,
+        width: 80,
         render: (_, record) => (
           <Space size="small">
             <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
@@ -679,7 +763,7 @@ function Proposals() {
         ),
       },
     ]
-  }, [openEditModal, tableData])
+  }, [openEditModal])
 
   return (
     <>
@@ -774,15 +858,62 @@ function Proposals() {
                   dataSource={filteredData}
                   loading={tableLoading}
                   pagination={{ pageSize: 10 }}
-                  scroll={{ x: 4200, y: 600 }}
+                  scroll={{ x: 1800, y: 600 }}
                   sticky
                   bordered
+                  onRow={(record) => ({
+                    onClick: () => openDetailModal(record),
+                    style: { cursor: 'pointer' },
+                  })}
                 />
               </div>
             </div>
           </Tabs.TabPane>
         </Tabs>
       </div>
+
+      {/* Detail View Modal */}
+      <Modal
+        title="Proposal Details"
+        open={detailModalOpen}
+        onCancel={closeDetailModal}
+        width={900}
+        footer={[
+          <Button key="close" onClick={closeDetailModal}>Close</Button>,
+          <Button key="edit" type="primary" onClick={() => {
+            closeDetailModal()
+            openEditModal(selectedRecord)
+          }}>Edit</Button>,
+        ]}
+        maskClosable={false}
+      >
+        {selectedRecord && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {ALL_FIELDS.filter(f => {
+              // Exclude quotation details, payment details, metadata for GH/CH
+              const excludedFields = [
+                'quote_reference', 'quote_description', 'quote_date', 'quote_amount',
+                'revised_negotiated', 'revised_negotiated_quote_date', 'revised_negotiated_quote_amount',
+                'quotation_given_by_name', 'quotation_given_by_department',
+                'party_name', 'activity', 'order_value', 'ppm_remarks',
+                'created_at', 'updated_at', 'id'
+              ]
+              return !excludedFields.includes(f.name)
+            }).map((field) => {
+              const value = selectedRecord[field.name]
+              const isDate = ['enquiry_date', 'quote_date', 'revised_negotiated_quote_date', 'order_date', 'delivery_date', 'extended_delivery_date', 'date_of_actual_commencement', 'dispatch_date'].includes(field.name)
+              const displayValue = isDate ? formatDate(value) : (value || '-')
+
+              return (
+                <div key={field.name} className="border-b pb-2">
+                  <div className="text-sm text-gray-500">{field.label}</div>
+                  <div className="font-medium">{displayValue}</div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Modal>
 
       {/* Add Proposal Modal (Coordinator) */}
       <Modal
@@ -807,6 +938,9 @@ function Proposals() {
               const isRequestType = fieldName === 'request_type'
               const isReadOnlyName = fieldName === 'quotation_given_by_name'
               const isReadOnlyDept = fieldName === 'quotation_given_by_department'
+              const isReadOnlyCenter = fieldName === 'center'
+              const isReadOnlyGroup = fieldName === 'group'
+              const isCustomerName = fieldName === 'customer_name'
 
               return (
                 <Col span={12} key={fieldName}>
@@ -830,7 +964,18 @@ function Proposals() {
                           <Select.Option key={opt} value={opt}>{opt}</Select.Option>
                         ))}
                       </Select>
-                    ) : isReadOnlyName || isReadOnlyDept ? (
+                    ) : isCustomerName ? (
+                      <AutoComplete
+                        options={customerOptions}
+                        onSearch={searchCustomers}
+                        onSelect={handleCustomerSelect}
+                        placeholder="Search existing customers..."
+                        style={{ width: '100%' }}
+                        allowClear
+                      >
+                        <Input />
+                      </AutoComplete>
+                    ) : isReadOnlyName || isReadOnlyDept || isReadOnlyCenter || isReadOnlyGroup ? (
                       <Input disabled style={{ background: '#f5f5f5', color: '#000' }} />
                     ) : (
                       <Input placeholder={`Enter ${field.label}`} />
@@ -856,7 +1001,7 @@ function Proposals() {
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Row gutter={[16, 16]}>
-            {FORM_FIELDS.map((field) => {
+            {TABLE_FIELDS.map((field) => {
               const allowedEditFields = [
                 'extended_delivery_date',
                 'co_ordinator_remarks',

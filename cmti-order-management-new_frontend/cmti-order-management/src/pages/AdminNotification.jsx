@@ -7,7 +7,21 @@ const AdminNotification = () => {
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
-    axios.get(`${API_BASE_URL}/notifications/`)
+    // Get user from localStorage
+    let userName = '';
+    let userRole = '';
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user');
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser);
+        userName = parsedUser?.name || '';
+        userRole = parsedUser?.role || '';
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error);
+    }
+
+    axios.get(`${API_BASE_URL}/notifications/?user_name=${encodeURIComponent(userName)}&role=${encodeURIComponent(userRole)}`)
       .then((notificationsRes) => {
         const filtered = notificationsRes.data.filter(
           (n) => n.trigerred_by !== "admin" && n.is_read !== 1

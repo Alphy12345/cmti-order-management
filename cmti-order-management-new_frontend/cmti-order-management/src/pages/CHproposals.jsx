@@ -1,19 +1,15 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
-  DeleteOutlined,
   EditOutlined,
   PlusOutlined,
   SearchOutlined,
   DownloadOutlined,
-  FilterOutlined,
-  CalendarOutlined,
 } from '@ant-design/icons'
 import {
   Button,
   Form,
   Input,
   Modal,
-  Popconfirm,
   Space,
   Table,
   Tabs,
@@ -26,6 +22,7 @@ import {
   Row,
   Col,
   Statistic,
+  AutoComplete,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -33,7 +30,7 @@ import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'
 import isSameOrBefore from 'dayjs/plugin/isSameOrBefore'
 import '../App.css'
 import { API_BASE_URL } from '../config/api.js'
-import { DISPLAY_DATE_FORMAT, formatDate, formatIndianNumber } from '../config/date.js'
+import { DISPLAY_DATE_FORMAT, formatDate } from '../config/date.js'
 
 dayjs.extend(isSameOrAfter)
 dayjs.extend(isSameOrBefore)
@@ -42,23 +39,41 @@ const { Title } = Typography
 const { TextArea } = Input
 const { RangePicker } = DatePicker
 
-const PROPOSAL_FIELDS = [
-  { name: 'id', label: 'ID (PK)', width: 120, fixed: 'left', inForm: false },
+// Restricted columns for CH (operational view - no quotation, no payment, no metadata)
+const TABLE_FIELDS = [
+  { name: 'id', label: 'SL NO', width: 80, fixed: 'left' },
+  { name: 'project_number', label: 'Project Number', width: 140 },
+  { name: 'customer_name', label: 'Customer Name', width: 180 },
+  { name: 'order_date', label: 'Order Date', width: 130 },
+  { name: 'delivery_date', label: 'Delivery Date', width: 140 },
+  { name: 'extended_delivery_date', label: 'Extended Delivery', width: 150 },
+  { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 170 },
+  { name: 'dispatch_date', label: 'Dispatch Date', width: 130 },
+  { name: 'key_deliverables', label: 'Key Deliverables', width: 220 },
+  { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 180 },
+  { name: 'center', label: 'Center', width: 120 },
+  { name: 'group', label: 'Group', width: 120 },
+  { name: 'status', label: 'Status', width: 130 },
+  { name: 'technical_completed_year', label: 'Technical Completion', width: 160 },
+  { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
+  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220 },
+  { name: 'closer_report', label: 'Closer Report', width: 180 },
+]
+
+// All fields for data mapping (internal use)
+const ALL_FIELDS = [
+  { name: 'id', label: 'ID (PK)', width: 120, fixed: 'left' },
   { name: 'enquiry_date', label: 'Enquiry Date', width: 150 },
   { name: 'customer_type', label: 'Customer Type', width: 170 },
+  { name: 'customer_name', label: 'Customer Name', width: 170 },
   { name: 'address', label: 'Address', width: 240 },
   { name: 'email', label: 'Email', width: 200 },
   { name: 'phone_no', label: 'Phone No.', width: 150 },
   { name: 'alternate_contact_details', label: 'Alternate Contact', width: 220 },
-  {
-    name: 'request_type',
-    label: 'Request Type',
-    width: 160,
-    render: (value) => (value ? <Tag color="blue">{value}</Tag> : null),
-  },
+  { name: 'request_type', label: 'Request Type', width: 160 },
   { name: 'email_reference', label: 'Email Reference', width: 200 },
   { name: 'quote_reference', label: 'Quote Reference', width: 190 },
-  { name: 'quote_description', label: 'Quote Description', width: 240, input: 'textarea' },
+  { name: 'quote_description', label: 'Quote Description', width: 240 },
   { name: 'quote_date', label: 'Quote Date', width: 140 },
   { name: 'quote_amount', label: 'Quote Amount', width: 160 },
   { name: 'revised_negotiated', label: 'Revised / Negotiated', width: 190, apiName: 'revised/negotiated' },
@@ -69,35 +84,31 @@ const PROPOSAL_FIELDS = [
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
-  { name: 'key_deliverables', label: 'Key Deliverables', width: 240, input: 'textarea' },
+  { name: 'key_deliverables', label: 'Key Deliverables', width: 240 },
   { name: 'order_number', label: 'Order Number', width: 150 },
   { name: 'order_date', label: 'Order Date', width: 150 },
   { name: 'delivery_date', label: 'Delivery Date', width: 160 },
   { name: 'extended_delivery_date', label: 'Extended Delivery', width: 190 },
   { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 210 },
   { name: 'order_value', label: 'Order Value', width: 170 },
-  { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260, input: 'textarea' },
+  { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260 },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'center', label: 'Center', width: 150 },
-  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
-  { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
+  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220 },
+  { name: 'closer_report', label: 'Closer Report', width: 200 },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
-  { name: 'status', label: 'Status', width: 150, input: 'select' },
+  { name: 'status', label: 'Status', width: 150 },
   { name: 'dispatch_date', label: 'Dispatch Date', width: 160 },
-  { name: 'ppm_remarks', label: 'PPM Remarks', width: 200, input: 'textarea' },
-  { name: 'created_at', label: 'Created At', width: 190, inForm: false },
-  { name: 'updated_at', label: 'Updated At', width: 190, inForm: false },
-  { name: 'updated_by', label: 'Updated By', width: 150, required: true },
+  { name: 'ppm_remarks', label: 'PPM Remarks', width: 200 },
+  { name: 'created_at', label: 'Created At', width: 190 },
+  { name: 'updated_at', label: 'Updated At', width: 190 },
+  { name: 'updated_by', label: 'Updated By', width: 150 },
   { name: 'group', label: 'Group', width: 150 },
-
 ]
 
-const FORM_FIELDS = PROPOSAL_FIELDS.filter((field) => field.inForm !== false)
-const TABLE_FIELDS = PROPOSAL_FIELDS
-
 const getApiName = (name) => {
-  const field = PROPOSAL_FIELDS.find((item) => item.name === name)
+  const field = ALL_FIELDS.find((item) => item.name === name)
   return field?.apiName ?? name
 }
 
@@ -108,23 +119,12 @@ const uniqueKey = () =>
 
 const mapApiToUi = (record) => {
   const mapped = {}
-  TABLE_FIELDS.forEach((field) => {
+  ALL_FIELDS.forEach((field) => {
     const apiName = getApiName(field.name)
     mapped[field.name] = record?.[apiName] ?? ''
   })
   mapped.key = record?.id ?? uniqueKey()
-  // Preserve payments data for dynamic column rendering
-  mapped.payments = record?.payments || []
   return mapped
-}
-
-const mapUiToApi = (values) => {
-  const payload = {}
-  FORM_FIELDS.forEach((field) => {
-    const apiName = getApiName(field.name)
-    payload[apiName] = values[field.name] ?? ''
-  })
-  return payload
 }
 
 const ActionButtons = ({ label, onAdd }) => (
@@ -135,6 +135,24 @@ const ActionButtons = ({ label, onAdd }) => (
   </Space>
 )
 
+const calculateOverdueDays = (deliveryDate, extendedDelivery) => {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const referenceDate = extendedDelivery
+    ? new Date(extendedDelivery)
+    : deliveryDate
+      ? new Date(deliveryDate)
+      : null
+
+  if (!referenceDate || isNaN(referenceDate.getTime())) return null
+
+  const diffMs = today - referenceDate
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+
+  return diffDays
+}
+
 function Proposals() {
   const [form] = Form.useForm()
   const [tableData, setTableData] = useState([])
@@ -142,19 +160,19 @@ function Proposals() {
   const [tableLoading, setTableLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [selectedRecord, setSelectedRecord] = useState(null)
   const [editingRecord, setEditingRecord] = useState(null)
-  const [deletingId, setDeletingId] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [centerFilter, setCenterFilter] = useState(null)
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
   const [projectNumberFilter, setProjectNumberFilter] = useState(null)
-  const [importPreview, setImportPreview] = useState(null)
-  const [importModalOpen, setImportModalOpen] = useState(false)
-  const fileInputRef = useRef(null)
-  const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [currentUserCenter, setCurrentUserCenter] = useState('')
+  const [currentUserGroup, setCurrentUserGroup] = useState('')
+  const [customerOptions, setCustomerOptions] = useState([])
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -207,6 +225,8 @@ function Proposals() {
         const parsedUser = JSON.parse(rawUser)
         if (parsedUser && parsedUser.name) {
           setCurrentUserName(parsedUser.name)
+          setCurrentUserCenter(parsedUser.center || '')
+          setCurrentUserGroup(parsedUser.group || '')
         }
       }
     } catch (error) {
@@ -220,10 +240,26 @@ function Proposals() {
     setEditingRecord(null)
     form.resetFields()
     if (currentUserName) {
-      form.setFieldsValue({ updated_by: currentUserName })
+      form.setFieldsValue({
+        updated_by: currentUserName,
+        quotation_given_by_name: currentUserName,
+        quotation_given_by_department: currentUserCenter ? currentUserCenter.toUpperCase() : '',
+        center: currentUserCenter || '',
+        group: currentUserGroup || '',
+      })
     }
     setModalOpen(true)
-  }, [form, currentUserName])
+  }, [form, currentUserName, currentUserCenter, currentUserGroup])
+
+  const openDetailModal = useCallback((record) => {
+    setSelectedRecord(record)
+    setDetailModalOpen(true)
+  }, [])
+
+  const closeDetailModal = useCallback(() => {
+    setDetailModalOpen(false)
+    setSelectedRecord(null)
+  }, [])
 
   const openEditModal = useCallback(
     (record) => {
@@ -238,17 +274,65 @@ function Proposals() {
     setModalOpen(false)
     setEditingRecord(null)
     form.resetFields()
+    setCustomerOptions([])
+  }, [form])
+
+  // Search customers by name
+  const searchCustomers = useCallback(async (searchValue) => {
+    if (!searchValue || searchValue.trim().length < 2) {
+      setCustomerOptions([])
+      return
+    }
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/customers/search?name=${encodeURIComponent(searchValue.trim())}`,
+        { headers: { accept: 'application/json' } }
+      )
+
+      if (!response.ok) throw new Error('Failed to search customers')
+
+      const customers = await response.json()
+      const options = customers.map((customer) => ({
+        value: customer.name,
+        label: `${customer.name} ${customer.customer_type ? `(${customer.customer_type})` : ''}`,
+        customer: customer,
+      }))
+      setCustomerOptions(options)
+    } catch (error) {
+      console.error('Customer search error:', error)
+      setCustomerOptions([])
+    }
+  }, [])
+
+  // Handle customer selection - auto-fill related fields
+  const handleCustomerSelect = useCallback((value, option) => {
+    const customer = option?.customer
+    if (customer) {
+      form.setFieldsValue({
+        customer_name: customer.name,
+        customer_type: customer.customer_type || '',
+        address: customer.address || '',
+        email: customer.email || '',
+        phone_no: customer.phone_no || '',
+        alternate_contact_details: customer.alternate_contact_details || '',
+      })
+    }
   }, [form])
 
   const handleSubmit = async (values) => {
+    if (!editingRecord) {
+      await handleCreate(values)
+      return
+    }
+
     if (!editingRecord?.id) {
       message.error('No record selected for editing')
       return
     }
 
     setSubmitLoading(true)
-    
-    // Build payload for coordinator-update endpoint (only allowed fields)
+
     const payload = {
       project_id: editingRecord.id,
       extended_delivery_date: values.extended_delivery_date || '',
@@ -283,31 +367,48 @@ function Proposals() {
     }
   }
 
-  const handleDelete = useCallback(
-    async (record) => {
-      setDeletingId(record.id)
-      try {
-        const response = await fetch(`${API_BASE_URL}/proposals/${record.id}`, {
-          method: 'DELETE',
-          headers: { accept: '*/*' },
-        })
-        if (!response.ok) {
-          const errorText = await response.text()
-          throw new Error(errorText || 'Failed to delete proposal')
-        }
-        message.success('Proposal deleted')
-        await fetchProposals()
-      } catch (error) {
-        console.error(error)
-        message.error(error.message || 'Unable to delete proposal')
-      } finally {
-        setDeletingId(null)
-      }
-    },
-    [fetchProposals],
-  )
+  const handleCreate = async (values) => {
+    setSubmitLoading(true)
+    try {
+      const createFields = [
+        'enquiry_date', 'customer_type', 'customer_name', 'address', 'email', 'phone_no',
+        'alternate_contact_details', 'request_type', 'email_reference', 'quote_reference',
+        'quote_description', 'quote_date', 'quote_amount', 'revised_negotiated',
+        'revised_negotiated_quote_date', 'revised_negotiated_quote_amount',
+        'quotation_given_by_name', 'quotation_given_by_department', 'center', 'group',
+      ]
 
-  // Calculate statistics
+      const payload = {}
+      createFields.forEach((fieldName) => {
+        const apiName = getApiName(fieldName)
+        payload[apiName] = values[fieldName] ?? ''
+      })
+
+      const response = await fetch(`${API_BASE_URL}/proposals/add-proposal-coordinator`, {
+        method: 'POST',
+        headers: {
+          accept: 'application/json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => ({}))
+        throw new Error(errorBody.detail || 'Failed to create proposal')
+      }
+
+      message.success('Proposal created successfully')
+      closeModal()
+      await fetchProposals()
+    } catch (error) {
+      console.error(error)
+      message.error(error.message || 'Unable to create proposal')
+    } finally {
+      setSubmitLoading(false)
+    }
+  }
+
   const statistics = useMemo(() => {
     const totalProposals = tableData.length
     const totalProjects = tableData.filter(
@@ -328,8 +429,7 @@ function Proposals() {
         item.financial_completed_year.trim() !== '',
     ).length
     const pendingProjects = tableData.filter(
-      (item) =>
-        item.status === 'Ongoing',
+      (item) => item.status === 'Ongoing',
     ).length
     return {
       totalProposals,
@@ -340,14 +440,11 @@ function Proposals() {
     }
   }, [tableData])
 
-  // Filter data based on search and filters
   useEffect(() => {
     let filtered = [...tableData]
 
-    // Search filter
     if (searchText) {
       const s = searchText.trim()
-      // If user typed only digits, treat it as ID (PK) search
       if (/^\d+$/.test(s)) {
         filtered = filtered.filter((item) => String(item.id) === s)
       } else {
@@ -360,12 +457,10 @@ function Proposals() {
       }
     }
 
-    // Center filter
     if (centerFilter) {
       filtered = filtered.filter((item) => item.center === centerFilter)
     }
 
-    // Project number prefix filter (GSP, ISP, GAP, ILP, DPP, LSP, CLP, SO)
     if (projectNumberFilter) {
       const prefix = projectNumberFilter.toUpperCase()
       filtered = filtered.filter((item) => {
@@ -375,7 +470,6 @@ function Proposals() {
       })
     }
 
-    // Order date filter
     if (orderDateRange && orderDateRange.length === 2) {
       filtered = filtered.filter((item) => {
         if (!item.order_date) return false
@@ -389,7 +483,6 @@ function Proposals() {
       })
     }
 
-    // Enquiry date filter
     if (enquiryDateRange && enquiryDateRange.length === 2) {
       filtered = filtered.filter((item) => {
         if (!item.enquiry_date) return false
@@ -404,7 +497,6 @@ function Proposals() {
       })
     }
 
-    // Status filter from cards
     if (statusFilter === 'totalProjects') {
       filtered = filtered.filter(
         (item) => item.project_number && item.project_number.trim() !== '',
@@ -427,8 +519,7 @@ function Proposals() {
       )
     } else if (statusFilter === 'pendingProjects') {
       filtered = filtered.filter(
-        (item) =>
-          item.status === 'Ongoing',
+        (item) => item.status === 'Ongoing',
       )
     }
 
@@ -443,7 +534,6 @@ function Proposals() {
     tableData,
   ])
 
-  // Get unique centers for filter
   const uniqueCenters = useMemo(() => {
     const centers = [
       ...new Set(tableData.map((item) => item.center).filter(Boolean)),
@@ -451,7 +541,6 @@ function Proposals() {
     return centers.sort()
   }, [tableData])
 
-  // Export to Excel
   const handleExportExcel = () => {
     if (filteredData.length === 0) {
       message.warning('No data to export')
@@ -475,215 +564,15 @@ function Proposals() {
     message.success('Excel file downloaded successfully')
   }
 
-  // Excel serial date starts from 1899-12-30
-  const EXCEL_EPOCH = dayjs('1899-12-30')
-  const isExcelDateSerial = (num) =>
-    typeof num === 'number' && num >= 40000 && num < 1000000
-
-  const excelSerialToDateString = (serial) => {
-    const days = Math.floor(serial) - (serial >= 24107 ? 1 : 0)
-    const date = EXCEL_EPOCH.add(days, 'day')
-    return date.format('YYYY-MM-DD')
-  }
-
-  const normalizeHeaderKey = (value) => {
-    if (!value) return ''
-    return value
-      .toString()
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '')
-  }
-
-  const handleBulkImport = async () => {
-    if (!importPreview?.rows?.length) {
-      message.warning('No rows to import')
-      return
-    }
-    setBulkImportLoading(true)
-    try {
-      // Build lookup from normalized header -> internal field name
-      const fieldLookup = PROPOSAL_FIELDS.reduce((acc, field) => {
-        const labelKey = normalizeHeaderKey(field.label)
-        const nameKey = normalizeHeaderKey(field.name)
-        const apiKey = normalizeHeaderKey(getApiName(field.name))
-        const fieldName = field.name
-        if (labelKey) acc[labelKey] = fieldName
-        if (nameKey) acc[nameKey] = fieldName
-        if (apiKey) acc[apiKey] = fieldName
-        return acc
-      }, {})
-
-      const payload = importPreview.rows.map((row) => {
-        const values = {}
-        importPreview.headers.forEach((header, idx) => {
-          const rawValue = row[idx]
-          let cleanValue = rawValue
-
-          const headerKey = normalizeHeaderKey(header)
-          let fieldName = fieldLookup[headerKey]
-
-          // Extra robust mapping for tricky columns
-          if (!fieldName) {
-            const hk = headerKey
-
-            // Email Reference (Email Ref, Email Reference No, Email Ref No etc.)
-            if (
-              hk.includes('email') &&
-              (hk.includes('reference') || hk.includes('ref'))
-            ) {
-              fieldName = 'email_reference'
-            }
-            // Center / Centre
-            else if (hk.includes('center') || hk.includes('centre')) {
-              fieldName = 'center'
-            }
-            // Co-ordinator Remarks / Coordinator Remarks / Co Ordinator Remarks etc.
-            else if (
-              (hk.includes('coord') || hk.includes('coordinator') || hk.includes('coordinator')) &&
-              hk.includes('remark')
-            ) {
-              fieldName = 'co_ordinator_remarks'
-            }
-            // Closer / Closure Report (Closure Report, Closer Rep etc.)
-            else if (
-              (hk.includes('closer') || hk.includes('closure') || hk.includes('closeout')) &&
-              (hk.includes('report') || hk.includes('rep'))
-            ) {
-              fieldName = 'closer_report'
-            }
-          }
-
-          if (!fieldName) return
-
-          // Handle Excel date serial numbers (e.g., 45400 → "2024-06-01")
-          if (typeof rawValue === 'number' && isExcelDateSerial(rawValue)) {
-            cleanValue = excelSerialToDateString(rawValue)
-          }
-          // Force all other numbers to strings
-          else if (typeof rawValue === 'number') {
-            cleanValue = rawValue.toString()
-          }
-          // Handle actual JS Date objects from XLSX
-          else if (rawValue instanceof Date) {
-            cleanValue = dayjs(rawValue).format('YYYY-MM-DD')
-          }
-          // Trim strings
-          else if (typeof rawValue === 'string') {
-            cleanValue = rawValue.trim()
-          }
-          // Empty cells
-          else if (rawValue === null || rawValue === undefined) {
-            cleanValue = ''
-          }
-
-          values[fieldName] = cleanValue
-        })
-
-        // Ensure required field is present
-        if (!values.updated_by) {
-          values.updated_by = 'Excel Import'
-        }
-
-        return mapUiToApi(values)
-      })
-
-      const response = await fetch(`${API_BASE_URL}/proposals/bulk`, {
-        method: 'POST',
-        headers: {
-          accept: 'application/json',
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!response.ok) {
-        const err = await response.text()
-        throw new Error(`Import failed: ${err.substring(0, 200)}...`)
-      }
-
-      const result = await response.json()
-      message.success(`${result.length} proposals imported successfully!`)
-      await fetchProposals()
-      setImportModalOpen(false)
-      setImportPreview(null)
-    } catch (err) {
-      console.error('Bulk import error:', err)
-      message.error(err.message || 'Failed to import data. Check console for details.')
-    } finally {
-      setBulkImportLoading(false)
-    }
-  }
-
-  // Import Excel and build preview
-  const handleImportFileChange = (event) => {
-    const file = event.target?.files?.[0]
-    if (!file) return
-
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target.result)
-        const workbook = XLSX.read(data, { type: 'array' })
-        const firstSheetName = workbook.SheetNames[0]
-        const worksheet = workbook.Sheets[firstSheetName]
-        const rows = XLSX.utils.sheet_to_json(worksheet, { header: 1 })
-        const headers = rows[0] || []
-        const body = rows.slice(1)
-        setImportPreview({ headers, rows: body, sheetName: firstSheetName })
-        setImportModalOpen(true)
-        message.success('File loaded. Preview opened.')
-      } catch (error) {
-        console.error(error)
-        message.error('Unable to read Excel file')
-      } finally {
-        if (event.target) {
-          event.target.value = ''
-        }
-      }
-    }
-    reader.readAsArrayBuffer(file)
-  }
-
-  // Helper function to calculate overdue days
-  const calculateOverdueDays = (deliveryDate, extendedDelivery) => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    // Use extended delivery date if present, otherwise use delivery date
-    const referenceDate = extendedDelivery
-      ? new Date(extendedDelivery)
-      : deliveryDate
-        ? new Date(deliveryDate)
-        : null
-
-    if (!referenceDate || isNaN(referenceDate.getTime())) return null
-
-    const diffMs = today - referenceDate
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-
-    return diffDays // positive = overdue, negative = still within deadline
-  }
-
   const columns = useMemo(() => {
     const dateFields = new Set([
-      'enquiry_date',
-      'quote_date',
-      'revised_negotiated_quote_date',
       'order_date',
       'delivery_date',
       'extended_delivery_date',
       'date_of_actual_commencement',
       'dispatch_date',
-      'created_at',
-      'updated_at',
       'technical_completed_year',
       'financial_completed_year',
-    ])
-
-    const amountFields = new Set([
-      'quote_amount',
-      'revised_negotiated_quote_amount',
-      'order_value',
     ])
 
     const baseColumns = TABLE_FIELDS.map((field) => {
@@ -695,7 +584,6 @@ function Proposals() {
         fixed: field.fixed,
       }
 
-      // Custom render for Status field with styled badges
       if (field.name === 'status') {
         return {
           ...baseColumn,
@@ -729,11 +617,10 @@ function Proposals() {
 
       return {
         ...baseColumn,
-        render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : amountFields.has(field.name) ? (value) => formatIndianNumber(value) : undefined),
+        render: field.render ?? (dateFields.has(field.name) ? (value) => formatDate(value) : undefined),
       }
     })
 
-    // Find index of extended_delivery_date and insert overdue_days after it
     const extendedDeliveryIndex = baseColumns.findIndex(
       (col) => col.key === 'extended_delivery_date',
     )
@@ -742,7 +629,7 @@ function Proposals() {
       key: 'overdue_days',
       dataIndex: 'overdue_days',
       title: 'Overdue Days',
-      width: 150,
+      width: 140,
       render: (_, record) => {
         const overdueDays = calculateOverdueDays(
           record.delivery_date,
@@ -773,51 +660,8 @@ function Proposals() {
       },
     }
 
-    // Insert overdue_days column after extended_delivery_date
     if (extendedDeliveryIndex !== -1) {
       baseColumns.splice(extendedDeliveryIndex + 1, 0, overdueDaysColumn)
-    }
-
-    // Calculate max payments across all proposals for dynamic columns
-    // Use 1 as minimum to always show at least Invoice 1 columns
-    const maxPayments = Math.max(...tableData.map(p => p.payments?.length || 0), 1)
-
-    // Payment sub-columns configuration
-    const paymentFields = [
-      { key: 'invoice_no', label: 'Inv#', width: 120 },
-      { key: 'invoice_date', label: 'Inv Date', width: 120 },
-      { key: 'gross_amount', label: 'Gross', width: 100 },
-      { key: 'get_amount', label: 'GST Amt', width: 100 },
-      { key: 'amount_claimed', label: 'Amt Claimed', width: 110 },
-      { key: 'amount_recieved', label: 'Amt Recd', width: 100 },
-      { key: 'recieved_date', label: 'Recd Date', width: 120 },
-      { key: 'tds', label: 'TDS', width: 80 },
-      { key: 'get_tds', label: 'GST TDS', width: 90 },
-      { key: 'ld', label: 'LD', width: 80 },
-      { key: 'bal', label: 'Balance', width: 100 },
-      { key: 'follow_up_status', label: 'Status', width: 120 },
-    ]
-
-    // Generate payment columns after ppm_remarks
-    const paymentColumns = []
-    for (let i = 0; i < maxPayments; i++) {
-      paymentFields.forEach((field) => {
-        paymentColumns.push({
-          key: `inv${i + 1}_${field.key}`,
-          dataIndex: 'payments',
-          title: `Inv ${i + 1} ${field.label}`,
-          width: field.width,
-          render: (_, record) => record.payments?.[i]?.[field.key] || '-',
-        })
-      })
-    }
-
-    // Find index of ppm_remarks and insert payment columns after it
-    const ppmRemarksIndex = baseColumns.findIndex(
-      (col) => col.key === 'ppm_remarks',
-    )
-    if (ppmRemarksIndex !== -1 && paymentColumns.length > 0) {
-      baseColumns.splice(ppmRemarksIndex + 1, 0, ...paymentColumns)
     }
 
     return [
@@ -826,7 +670,7 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 100,
+        width: 80,
         render: (_, record) => (
           <Space size="small">
             <Button
@@ -841,7 +685,7 @@ function Proposals() {
         ),
       },
     ]
-  }, [openEditModal, tableData])
+  }, [openEditModal])
 
   return (
     <>
@@ -854,24 +698,15 @@ function Proposals() {
               label: 'Proposals',
               children: (
                 <div className="space-y-6">
-                  {/* Statistics Cards */}
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
                       onClick={() => setStatusFilter(null)}
                     >
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Total Proposals
-                          </span>
-                        }
+                        title={<span className="text-white/90">Total Proposals</span>}
                         value={statistics.totalProposals}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
                     <Card
@@ -879,17 +714,9 @@ function Proposals() {
                       onClick={() => setStatusFilter('totalProjects')}
                     >
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Total Projects
-                          </span>
-                        }
+                        title={<span className="text-white/90">Total Projects</span>}
                         value={statistics.totalProjects}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
                     <Card
@@ -897,17 +724,9 @@ function Proposals() {
                       onClick={() => setStatusFilter('technicallyCompleted')}
                     >
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Technically Completed
-                          </span>
-                        }
+                        title={<span className="text-white/90">Technically Completed</span>}
                         value={statistics.technicallyCompleted}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
                     <Card
@@ -915,17 +734,9 @@ function Proposals() {
                       onClick={() => setStatusFilter('financiallyCompleted')}
                     >
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Financially Completed
-                          </span>
-                        }
+                        title={<span className="text-white/90">Financially Completed</span>}
                         value={statistics.financiallyCompleted}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
                     <Card
@@ -933,27 +744,16 @@ function Proposals() {
                       onClick={() => setStatusFilter('pendingProjects')}
                     >
                       <Statistic
-                        title={
-                          <span className="text-white/90">
-                            Ongoing Projects
-                          </span>
-                        }
+                        title={<span className="text-white/90">Ongoing Projects</span>}
                         value={statistics.pendingProjects}
-                        valueStyle={{
-                          color: '#fff',
-                          fontSize: '28px',
-                          fontWeight: 'bold',
-                        }}
+                        valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
                   </div>
 
-                  {/* Search and Filters Section */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                     <div className="mb-4">
-                      <Title level={4} className="!mb-0">
-                        Search & Filters
-                      </Title>
+                      <Title level={4} className="!mb-0">Search & Filters</Title>
                     </div>
                     <Row gutter={[16, 16]}>
                       <Col xs={24} sm={12} md={6}>
@@ -966,7 +766,6 @@ function Proposals() {
                           allowClear
                         />
                       </Col>
-                      {/* Clear Filters button (clears search + all filters) */}
                       <Col xs={24} sm={12} md={4} className="flex items-center">
                         <Button
                           onClick={() => {
@@ -993,9 +792,7 @@ function Proposals() {
                           style={{ width: '100%' }}
                         >
                           {['GSP', 'ISP', 'GAP', 'ILP', 'DPP', 'LSP', 'CLP', 'SO'].map((code) => (
-                            <Select.Option key={code} value={code}>
-                              {code}
-                            </Select.Option>
+                            <Select.Option key={code} value={code}>{code}</Select.Option>
                           ))}
                         </Select>
                       </Col>
@@ -1009,9 +806,7 @@ function Proposals() {
                           style={{ width: '100%' }}
                         >
                           {uniqueCenters.map((center) => (
-                            <Select.Option key={center} value={center}>
-                              {center}
-                            </Select.Option>
+                            <Select.Option key={center} value={center}>{center}</Select.Option>
                           ))}
                         </Select>
                       </Col>
@@ -1027,10 +822,7 @@ function Proposals() {
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <RangePicker
-                          placeholder={[
-                            'Start Enquiry Date',
-                            'End Enquiry Date',
-                          ]}
+                          placeholder={['Start Enquiry Date', 'End Enquiry Date']}
                           value={enquiryDateRange}
                           onChange={setEnquiryDateRange}
                           size="large"
@@ -1052,16 +844,12 @@ function Proposals() {
                     </Row>
                   </div>
 
-                  {/* Proposals Table */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
                       <div>
-                        <Title level={4} className="!mb-1">
-                          Proposal
-                        </Title>
+                        <Title level={4} className="!mb-1">Proposal</Title>
                         <p className="text-slate-500 text-sm">
-                          Showing {filteredData.length} of {tableData.length}{' '}
-                          proposals
+                          Showing {filteredData.length} of {tableData.length} proposals
                         </p>
                       </div>
                       <ActionButtons label="Proposal" onAdd={openAddModal} />
@@ -1072,9 +860,13 @@ function Proposals() {
                       dataSource={filteredData}
                       loading={tableLoading}
                       pagination={{ pageSize: 10 }}
-                      scroll={{ x: 4200, y: 600 }}
+                      scroll={{ x: 1800, y: 600 }}
                       sticky
                       bordered
+                      onRow={(record) => ({
+                        onClick: () => openDetailModal(record),
+                        style: { cursor: 'pointer' },
+                      })}
                     />
                   </div>
                 </div>
@@ -1083,6 +875,49 @@ function Proposals() {
           ]}
         />
       </div>
+
+      {/* Detail View Modal */}
+      <Modal
+        title="Proposal Details"
+        open={detailModalOpen}
+        onCancel={closeDetailModal}
+        width={900}
+        footer={[
+          <Button key="close" onClick={closeDetailModal}>Close</Button>,
+          <Button key="edit" type="primary" onClick={() => {
+            closeDetailModal()
+            openEditModal(selectedRecord)
+          }}>Edit</Button>,
+        ]}
+        maskClosable={false}
+      >
+        {selectedRecord && (
+          <div className="grid gap-4 md:grid-cols-2">
+            {ALL_FIELDS.filter(f => {
+              // Exclude quotation details, payment details, metadata for CH
+              const excludedFields = [
+                'quote_reference', 'quote_description', 'quote_date', 'quote_amount',
+                'revised_negotiated', 'revised_negotiated_quote_date', 'revised_negotiated_quote_amount',
+                'quotation_given_by_name', 'quotation_given_by_department',
+                'party_name', 'activity', 'order_value', 'ppm_remarks',
+                'created_at', 'updated_at', 'id'
+              ]
+              return !excludedFields.includes(f.name)
+            }).map((field) => {
+              const value = selectedRecord[field.name]
+              const isDate = ['enquiry_date', 'quote_date', 'revised_negotiated_quote_date', 'order_date', 'delivery_date', 'extended_delivery_date', 'date_of_actual_commencement', 'dispatch_date'].includes(field.name)
+              const displayValue = isDate ? formatDate(value) : (value || '-')
+
+              return (
+                <div key={field.name} className="border-b pb-2">
+                  <div className="text-sm text-gray-500">{field.label}</div>
+                  <div className="font-medium">{displayValue}</div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Modal>
 
       <Modal
         title={editingRecord ? 'Edit Proposal' : 'Add Proposal'}
@@ -1098,12 +933,10 @@ function Proposals() {
           form={form}
           layout="vertical"
           onFinish={handleSubmit}
-          initialValues={{
-            updated_by: localStorage.getItem('loggedInUser'),
-          }}
+          initialValues={{ updated_by: localStorage.getItem('loggedInUser') }}
         >
           <div className="grid gap-4 md:grid-cols-2">
-            {FORM_FIELDS.map((field) => {
+            {ALL_FIELDS.filter(f => !['id', 'created_at', 'updated_at'].includes(f.name)).map((field) => {
               const allowedEditFields = [
                 'extended_delivery_date',
                 'co_ordinator_remarks',
@@ -1111,20 +944,14 @@ function Proposals() {
                 'updated_by',
               ]
 
-              // When editing, only show the allowed edit fields
               if (editingRecord && !allowedEditFields.includes(field.name)) {
                 return null
               }
 
               const dateFields = [
-                'enquiry_date',
-                'quote_date',
-                'revised_negotiated_quote_date',
-                'order_date',
-                'delivery_date',
-                'extended_delivery_date',
-                'date_of_actual_commencement',
-                'dispatch_date',
+                'enquiry_date', 'quote_date', 'revised_negotiated_quote_date',
+                'order_date', 'delivery_date', 'extended_delivery_date',
+                'date_of_actual_commencement', 'dispatch_date',
               ]
               const isDateField = dateFields.includes(field.name)
 
@@ -1134,64 +961,55 @@ function Proposals() {
                     key={field.name}
                     name={field.name}
                     label={field.label}
-                    rules={
-                      field.required
-                        ? [
-                            {
-                              required: true,
-                              message: `Please enter ${field.label}`,
-                            },
-                          ]
-                        : []
-                    }
-                    getValueProps={(value) => ({
-                      value: value
-                        ? dayjs(value).isValid()
-                          ? dayjs(value)
-                          : null
-                        : null,
-                    })}
+                    rules={field.required ? [{ required: true, message: `Please enter ${field.label}` }] : []}
+                    getValueProps={(value) => ({ value: value ? dayjs(value).isValid() ? dayjs(value) : null : null })}
                     normalize={(value) => {
                       if (!value) return ''
-                      if (dayjs.isDayjs(value)) {
-                        return value.format('YYYY-MM-DD')
-                      }
+                      if (dayjs.isDayjs(value)) return value.format('YYYY-MM-DD')
                       return value
                     }}
                   >
-                    <DatePicker
-                      style={{ width: '100%' }}
-                      format={DISPLAY_DATE_FORMAT}
-                      placeholder={`Select ${field.label}`}
-                    />
+                    <DatePicker style={{ width: '100%' }} format={DISPLAY_DATE_FORMAT} placeholder={`Select ${field.label}`} />
                   </Form.Item>
                 )
               }
 
-              const InputComponent = field.input === 'textarea' ? TextArea : Input
+              const InputComponent = ['Description', 'Deliverables', 'Remarks', 'Report', 'Details'].some(t => field.label?.includes(t)) ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
-              const shouldDisable = isUpdatedByField && editingRecord
+              const isReadOnlyField = ['quotation_given_by_name', 'quotation_given_by_department', 'center', 'group'].includes(field.name)
+              const isCustomerName = field.name === 'customer_name'
+              const shouldDisable = isUpdatedByField || (isReadOnlyField && editingRecord)
+
+              if (isCustomerName && !editingRecord) {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={field.required ? [{ required: true, message: `Please enter ${field.label}` }] : []}
+                  >
+                    <AutoComplete
+                      options={customerOptions}
+                      onSearch={searchCustomers}
+                      onSelect={handleCustomerSelect}
+                      placeholder="Search existing customers..."
+                      style={{ width: '100%' }}
+                      allowClear
+                    >
+                      <Input />
+                    </AutoComplete>
+                  </Form.Item>
+                )
+              }
 
               return (
                 <Form.Item
                   key={field.name}
                   name={field.name}
                   label={field.label}
-                  rules={
-                    field.required
-                      ? [
-                          {
-                            required: true,
-                            message: `Please enter ${field.label}`,
-                          },
-                        ]
-                      : []
-                  }
+                  rules={field.required ? [{ required: true, message: `Please enter ${field.label}` }] : []}
                 >
-                  <InputComponent
-                    rows={field.input === 'textarea' ? 2 : undefined}
-                    disabled={shouldDisable}
-                  />
+                  <InputComponent rows={2} disabled={shouldDisable} />
                 </Form.Item>
               )
             })}
