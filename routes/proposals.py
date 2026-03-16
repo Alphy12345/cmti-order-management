@@ -3,7 +3,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func , desc , or_
+from sqlalchemy import func , desc , or_ , and_
 from sqlalchemy import inspect as sa_inspect
 
 
@@ -142,13 +142,32 @@ def create_proposal(payload: ProposalCreate, db: Session = Depends(get_db)) -> P
     db.add(master_proposal)
     db.commit()
 
-    create_notification(
-    db=db,
-    user_name="admin",
-    message=f"New proposal created: {proposal.customer_name} , {proposal.quote_description}",
-    proposal_id=proposal.id,
-    trigerred_by = "admin"
-)
+    # Send notifications
+    try:
+        # Send notification to the coordinator (quotation_given_by_name)
+        coordinator_name = proposal.quotation_given_by_name or proposal.project_co_ordinator
+        if coordinator_name:
+            create_notification(
+                db=db,
+                user_name=coordinator_name,
+                message=f"Proposal #{proposal.id} has been created: {proposal.customer_name} - {proposal.quote_description}",
+                proposal_id=proposal.id,
+                trigerred_by="admin"
+            )
+    except Exception as e:
+        print(f"Error sending coordinator notification: {e}")
+    
+    try:
+        # Send notification to admin as confirmation
+        create_notification(
+            db=db,
+            user_name="admin",
+            message=f"Proposal #{proposal.id} created successfully for {proposal.customer_name}",
+            proposal_id=proposal.id,
+            trigerred_by="admin"
+        )
+    except Exception as e:
+        print(f"Error sending admin notification: {e}")
 
     return proposal
 
@@ -290,32 +309,127 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
     # First, look up the user's role
     user = db.query(User).filter(func.lower(User.name) == name_lower).first()
     user_role = user.role.lower() if user and user.role else None
-    
-    # Collect all names to search for (starts with the requested name)
-    names_to_search = [name_lower]
-    
-    # If user has 'gh' or 'ch' role, fetch all users with same role
-    if user_role in ['gh', 'ch']:
-        role_users = db.query(User).filter(
-            func.lower(User.role) == user_role,
-            func.lower(User.name) != name_lower  # Exclude the original user
+
+    # GH should only see proposals from SAME CENTER + SAME GROUP:
+    #   1. Proposal's center matches GH's center
+    #   2. AND (proposal's group matches GH's group OR assigned to group member)
+    if user_role == 'gh':
+        user_group_lower = (user.group or '').strip().lower() if user else ''
+        user_center_lower = (user.center or '').strip().lower() if user else ''
+        
+        # Find all users in the same group
+        group_users = db.query(User).filter(
+            func.lower(User.group) == user_group_lower,
         ).all()
-        for role_user in role_users:
-            names_to_search.append(role_user.name.lower())
-    
-    # Fetch proposals for all collected names
-    proposals_query = (
-        db.query(Proposal)
-        .filter(
-            or_(
-                func.lower(Proposal.quotation_given_by_name).in_(names_to_search),
-                func.lower(Proposal.project_co_ordinator).in_(names_to_search),
-            ),
-            Proposal.is_acknowledged == True,
+        group_user_names = [u.name.lower() for u in group_users if u.name]
+        
+        # Build conditions:
+        # 1. Proposal's center matches GH's center
+        center_match = func.lower(Proposal.center) == user_center_lower
+        
+        # 2. Proposal's group matches GH's group exactly
+        group_match = func.lower(Proposal.group) == user_group_lower
+        
+        # 3. Proposal has no group set, but is assigned to a group member
+        no_group = or_(Proposal.group == None, Proposal.group == '')
+        assigned_to_member = or_(
+            func.lower(Proposal.quotation_given_by_name).in_(group_user_names) if group_user_names else False,
+            func.lower(Proposal.project_co_ordinator).in_(group_user_names) if group_user_names else False,
         )
-        .distinct(Proposal.id)
-        .all()
-    )
+        
+        proposals = (
+            db.query(Proposal)
+            .filter(
+                center_match,  # Must be same center
+                or_(
+                    group_match,
+                    and_(no_group, assigned_to_member),
+                ),
+                Proposal.is_acknowledged == True,
+            )
+            .distinct(Proposal.id)
+            .all()
+        )
+
+        if not proposals:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No proposals found for '{name}' in quotation_given_by_name OR group"
+                ),
+            )
+
+        # Serialize proposals with payments data
+        result = []
+        for proposal in proposals:
+            proposal_data = {
+                key: value
+                for key, value in proposal.__dict__.items()
+                if not key.startswith("_")
+            }
+
+            if not proposal_data.get('group') and proposal.group:
+                proposal_data['group'] = proposal.group
+
+            payments = db.query(Payment).filter(Payment.project_id == proposal.id).all()
+
+            payments_data = []
+            for payment in payments:
+                payment_dict = {
+                    key: value
+                    for key, value in payment.__dict__.items()
+                    if not key.startswith("_")
+                }
+
+                if payment.stage_id:
+                    stage = db.query(Stage).filter(Stage.id == payment.stage_id).first()
+                    payment_dict["stage_name"] = stage.name if stage else None
+                else:
+                    payment_dict["stage_name"] = None
+
+                payments_data.append(payment_dict)
+
+            proposal_data["payments"] = payments_data
+            result.append(proposal_data)
+
+        return result
+    
+    if user_role == 'scientist':
+        proposals_query = (
+            db.query(Proposal)
+            .filter(
+                func.lower(Proposal.project_co_ordinator).contains(name_lower),
+                Proposal.is_acknowledged == True,
+            )
+            .distinct(Proposal.id)
+            .all()
+        )
+    else:
+        # Collect all names to search for (starts with the requested name)
+        names_to_search = [name_lower]
+        
+        # If user has 'gh' or 'ch' role, fetch all users with same role
+        if user_role in ['gh', 'ch']:
+            role_users = db.query(User).filter(
+                func.lower(User.role) == user_role,
+                func.lower(User.name) != name_lower  # Exclude the original user
+            ).all()
+            for role_user in role_users:
+                names_to_search.append(role_user.name.lower())
+        
+        # Fetch proposals for all collected names
+        proposals_query = (
+            db.query(Proposal)
+            .filter(
+                or_(
+                    func.lower(Proposal.quotation_given_by_name).in_(names_to_search),
+                    func.lower(Proposal.project_co_ordinator).in_(names_to_search),
+                ),
+                Proposal.is_acknowledged == True,
+            )
+            .distinct(Proposal.id)
+            .all()
+        )
     
     # Remove duplicates (should already be unique due to distinct, but safety check)
     seen_ids = set()
@@ -382,8 +496,265 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
 
 
 # ------------------------------
-# ANALYTICS: PROPOSAL VS PROJECT CONVERSION
+# ANALYTICS: ROLE-BASED PROPOSAL STATISTICS
 # ------------------------------
+@router.get("/stats/global")
+def get_global_proposal_stats(db: Session = Depends(get_db)):
+    """
+    Get global proposal statistics for Admin role.
+    Returns counts for: totalProposals, totalProjects, technicallyCompleted, financiallyCompleted, ongoingProjects
+    """
+    # Total proposals (acknowledged only)
+    total_proposals = db.query(func.count(Proposal.id)).filter(
+        Proposal.is_acknowledged == True
+    ).scalar()
+    
+    # Total projects (have project_number)
+    total_projects = db.query(func.count(Proposal.id)).filter(
+        Proposal.is_acknowledged == True,
+        Proposal.project_number.isnot(None),
+        Proposal.project_number != ''
+    ).scalar()
+    
+    # Technically completed
+    technically_completed = db.query(func.count(Proposal.id)).filter(
+        Proposal.is_acknowledged == True,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != ''
+    ).scalar()
+    
+    # Financially completed
+    financially_completed = db.query(func.count(Proposal.id)).filter(
+        Proposal.is_acknowledged == True,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != '',
+        Proposal.financial_completed_year.isnot(None),
+        Proposal.financial_completed_year != ''
+    ).scalar()
+    
+    # Ongoing projects
+    ongoing_projects = db.query(func.count(Proposal.id)).filter(
+        Proposal.is_acknowledged == True,
+        Proposal.status == 'Ongoing'
+    ).scalar()
+    
+    return {
+        "totalProposals": total_proposals,
+        "totalProjects": total_projects,
+        "technicallyCompleted": technically_completed,
+        "financiallyCompleted": financially_completed,
+        "ongoingProjects": ongoing_projects
+    }
+
+
+@router.get("/stats/by-center/{center}")
+def get_proposal_stats_by_center(center: str, db: Session = Depends(get_db)):
+    """
+    Get proposal statistics filtered by center for CH role.
+    Returns counts for: totalProposals, totalProjects, technicallyCompleted, financiallyCompleted, ongoingProjects
+    """
+    from models.user_model import User
+    
+    center_lower = center.strip().lower()
+    
+    # Find all users in this center
+    center_users = db.query(User).filter(
+        func.lower(User.center) == center_lower
+    ).all()
+    center_user_names = [u.name.lower() for u in center_users if u.name]
+    
+    # Build base query: Proposal's center matches OR assigned to center member
+    center_match = func.lower(Proposal.center) == center_lower
+    assigned_to_member = or_(
+        func.lower(Proposal.quotation_given_by_name).in_(center_user_names) if center_user_names else False,
+        func.lower(Proposal.project_co_ordinator).in_(center_user_names) if center_user_names else False,
+    )
+    
+    base_filter = and_(
+        or_(center_match, assigned_to_member),
+        Proposal.is_acknowledged == True
+    )
+    
+    # Total proposals (acknowledged)
+    total_proposals = db.query(func.count(Proposal.id)).filter(base_filter).scalar()
+    
+    # Total projects (have project_number)
+    total_projects = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.project_number.isnot(None),
+        Proposal.project_number != ''
+    ).scalar()
+    
+    # Technically completed
+    technically_completed = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != ''
+    ).scalar()
+    
+    # Financially completed
+    financially_completed = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != '',
+        Proposal.financial_completed_year.isnot(None),
+        Proposal.financial_completed_year != ''
+    ).scalar()
+    
+    # Ongoing projects
+    ongoing_projects = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.status == 'Ongoing'
+    ).scalar()
+    
+    return {
+        "totalProposals": total_proposals,
+        "totalProjects": total_projects,
+        "technicallyCompleted": technically_completed,
+        "financiallyCompleted": financially_completed,
+        "ongoingProjects": ongoing_projects
+    }
+
+
+@router.get("/stats/by-group/{group}")
+def get_proposal_stats_by_group(group: str, db: Session = Depends(get_db)):
+    """
+    Get proposal statistics filtered by group for GH role.
+    Returns counts for: totalProposals, totalProjects, technicallyCompleted, financiallyCompleted, ongoingProjects
+    """
+    from models.user_model import User
+    
+    group_lower = group.strip().lower()
+    
+    # Find all users in this group
+    group_users = db.query(User).filter(
+        func.lower(User.group) == group_lower
+    ).all()
+    group_user_names = [u.name.lower() for u in group_users if u.name]
+    
+    # Build base conditions:
+    # 1. Proposal's group matches GH's group exactly
+    group_match = func.lower(Proposal.group) == group_lower
+    
+    # 2. Proposal has no group set, but is assigned to a member
+    no_group = or_(Proposal.group == None, Proposal.group == '')
+    assigned_to_member = or_(
+        func.lower(Proposal.quotation_given_by_name).in_(group_user_names) if group_user_names else False,
+        func.lower(Proposal.project_co_ordinator).in_(group_user_names) if group_user_names else False,
+    )
+    
+    base_filter = and_(
+        or_(group_match, and_(no_group, assigned_to_member)),
+        Proposal.is_acknowledged == True
+    )
+    
+    # Total proposals (acknowledged)
+    total_proposals = db.query(func.count(Proposal.id)).filter(base_filter).scalar()
+    
+    # Total projects (have project_number)
+    total_projects = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.project_number.isnot(None),
+        Proposal.project_number != ''
+    ).scalar()
+    
+    # Technically completed
+    technically_completed = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != ''
+    ).scalar()
+    
+    # Financially completed
+    financially_completed = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != '',
+        Proposal.financial_completed_year.isnot(None),
+        Proposal.financial_completed_year != ''
+    ).scalar()
+    
+    # Ongoing projects
+    ongoing_projects = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.status == 'Ongoing'
+    ).scalar()
+    
+    return {
+        "totalProposals": total_proposals,
+        "totalProjects": total_projects,
+        "technicallyCompleted": technically_completed,
+        "financiallyCompleted": financially_completed,
+        "ongoingProjects": ongoing_projects
+    }
+
+
+@router.get("/stats/by-scientist/{name}")
+def get_proposal_stats_by_scientist(name: str, db: Session = Depends(get_db)):
+    """
+    Get proposal statistics for Scientist role.
+    Counts proposals where project_co_ordinator contains the scientist's name.
+    Returns counts for: totalProposals, totalProjects, technicallyCompleted, financiallyCompleted, ongoingProjects
+    """
+    from models.user_model import User
+    
+    name_lower = name.strip().lower()
+    
+    # Check if user exists and is a scientist
+    user = db.query(User).filter(func.lower(User.name) == name_lower).first()
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User '{name}' not found")
+    
+    if user.role and user.role.lower() != 'scientist':
+        raise HTTPException(status_code=403, detail=f"User '{name}' is not a scientist")
+    
+    # Base filter: project_co_ordinator contains scientist name AND acknowledged
+    base_filter = and_(
+        func.lower(Proposal.project_co_ordinator).contains(name_lower),
+        Proposal.is_acknowledged == True
+    )
+    
+    # Total proposals (acknowledged, assigned to scientist via project_co_ordinator)
+    total_proposals = db.query(func.count(Proposal.id)).filter(base_filter).scalar()
+    
+    # Total projects (have project_number)
+    total_projects = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.project_number.isnot(None),
+        Proposal.project_number != ''
+    ).scalar()
+    
+    # Technically completed
+    technically_completed = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != ''
+    ).scalar()
+    
+    # Financially completed
+    financially_completed = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.technical_completed_year.isnot(None),
+        Proposal.technical_completed_year != '',
+        Proposal.financial_completed_year.isnot(None),
+        Proposal.financial_completed_year != ''
+    ).scalar()
+    
+    # Ongoing projects
+    ongoing_projects = db.query(func.count(Proposal.id)).filter(
+        base_filter,
+        Proposal.status == 'Ongoing'
+    ).scalar()
+    
+    return {
+        "totalProposals": total_proposals,
+        "totalProjects": total_projects,
+        "technicallyCompleted": technically_completed,
+        "financiallyCompleted": financially_completed,
+        "ongoingProjects": ongoing_projects
+    }
+
+
 @router.get("/proposal-vs-project")
 def proposal_vs_project(db: Session = Depends(get_db)):
     """
@@ -512,7 +883,7 @@ def update_proposal(
     message=f"Proposal ID {proposal.id} updated",
     proposal_id=proposal.id,
     trigerred_by = "admin"
-)
+    )
     # Build response with payments as dicts (ProposalResponse expects List[dict])
     mapper = sa_inspect(Proposal).mapper
     proposal_data = {
@@ -590,6 +961,14 @@ def coordinator_update(payload: CoordinatorUpdate, db: Session = Depends(get_db)
     message=f"Coordinator updated proposal ID {proposal.id}",
     proposal_id=proposal.id,
     trigerred_by= "Coordinator"
+)
+
+    create_notification(
+    db=db,
+    user_name="admin",
+    message=f"Proposal ID {proposal.id} updated by {payload.updated_by}",
+    proposal_id=proposal.id,
+    trigerred_by="Coordinator"
 )
 
     return {
@@ -804,9 +1183,34 @@ def get_proposals_by_centre(centre: str, db: Session = Depends(get_db)):
     Returns:
         List of proposals for the specified centre
     """
-    proposals = db.query(Proposal).filter(
-        func.lower(Proposal.center) == centre.lower() , Proposal.is_acknowledged == True
+    centre_lower = centre.strip().lower()
+    from models.user_model import User
+    
+    # Find all users in this center
+    center_users = db.query(User).filter(
+        func.lower(User.center) == centre_lower
     ).all()
+    center_user_names = [u.name.lower() for u in center_users if u.name]
+
+    # Conditions: Proposal's center matches OR Proposal is assigned to a center member
+    center_match = func.lower(Proposal.center) == centre_lower
+    assigned_to_member = or_(
+        func.lower(Proposal.quotation_given_by_name).in_(center_user_names) if center_user_names else False,
+        func.lower(Proposal.project_co_ordinator).in_(center_user_names) if center_user_names else False,
+    )
+
+    proposals = (
+        db.query(Proposal)
+        .filter(
+            or_(
+                center_match,
+                assigned_to_member,
+            ),
+            Proposal.is_acknowledged == True,
+        )
+        .distinct(Proposal.id)
+        .all()
+    )
 
     if not proposals:
         raise HTTPException(
