@@ -4,6 +4,7 @@ import {
   PlusOutlined,
   SearchOutlined,
   DownloadOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -51,13 +52,13 @@ const TABLE_FIELDS = [
   { name: 'dispatch_date', label: 'Dispatch Date', width: 130 },
   { name: 'key_deliverables', label: 'Key Deliverables', width: 220 },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 180 },
-  { name: 'center', label: 'Center', width: 120 },
+  { name: 'center', label: 'Centre', width: 120 },
   { name: 'group', label: 'Group', width: 120 },
   { name: 'status', label: 'Status', width: 130 },
   { name: 'technical_completed_year', label: 'Technical Completion', width: 160 },
   { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220 },
-  { name: 'closer_report', label: 'Closer Report', width: 180 },
+  { name: 'closer_report', label: 'Closure Report', width: 180 },
 ]
 
 // All fields for data mapping (internal use)
@@ -93,9 +94,9 @@ const ALL_FIELDS = [
   { name: 'order_value', label: 'Order Value', width: 170 },
   { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260 },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
-  { name: 'center', label: 'Center', width: 150 },
+  { name: 'center', label: 'Centre', width: 150 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220 },
-  { name: 'closer_report', label: 'Closer Report', width: 200 },
+  { name: 'closer_report', label: 'Closure Report', width: 200 },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
   { name: 'status', label: 'Status', width: 150 },
@@ -165,6 +166,7 @@ function Proposals() {
   const [editingRecord, setEditingRecord] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [centerFilter, setCenterFilter] = useState(null)
+  const [groupFilter, setGroupFilter] = useState(null)
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
@@ -172,6 +174,14 @@ function Proposals() {
   const [currentUserName, setCurrentUserName] = useState('')
   const [currentUserCenter, setCurrentUserCenter] = useState('')
   const [currentUserGroup, setCurrentUserGroup] = useState('')
+  const [proposalCount, setProposalCount] = useState(0)
+  const [stats, setStats] = useState({
+    totalProposals: 0,
+    totalProjects: 0,
+    technicallyCompleted: 0,
+    financiallyCompleted: 0,
+    ongoingProjects: 0
+  })
   const [customerOptions, setCustomerOptions] = useState([])
 
   const fetchProposals = useCallback(async () => {
@@ -234,7 +244,42 @@ function Proposals() {
     }
 
     fetchProposals()
+    fetchStats()
   }, [fetchProposals])
+
+  const fetchStats = useCallback(async () => {
+    let center = ''
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        center = parsedUser?.center || ''
+      }
+    } catch (err) {
+      console.error('Failed to parse ppm_user from localStorage', err)
+    }
+
+    if (!center) {
+      return
+    }
+
+    try {
+      const encodedCenter = encodeURIComponent(center)
+      const response = await fetch(`${API_BASE_URL}/proposals/stats/by-center/${encodedCenter}`, {
+        headers: { accept: 'application/json' },
+      })
+
+      if (!response.ok) {
+        throw new Error('Unable to fetch proposal stats')
+      }
+
+      const payload = await response.json()
+      setStats(payload)
+      setProposalCount(payload.totalProposals)
+    } catch (error) {
+      console.error(error)
+    }
+  }, [])
 
   const openAddModal = useCallback(() => {
     setEditingRecord(null)
@@ -417,9 +462,7 @@ function Proposals() {
     const technicallyCompleted = tableData.filter(
       (item) =>
         item.technical_completed_year &&
-        item.technical_completed_year.trim() !== '' &&
-        (!item.financial_completed_year ||
-          item.financial_completed_year.trim() === ''),
+        item.technical_completed_year.trim() !== '',
     ).length
     const financiallyCompleted = tableData.filter(
       (item) =>
@@ -459,6 +502,10 @@ function Proposals() {
 
     if (centerFilter) {
       filtered = filtered.filter((item) => item.center === centerFilter)
+    }
+
+    if (groupFilter) {
+      filtered = filtered.filter((item) => item.group === groupFilter)
     }
 
     if (projectNumberFilter) {
@@ -505,9 +552,7 @@ function Proposals() {
       filtered = filtered.filter(
         (item) =>
           item.technical_completed_year &&
-          item.technical_completed_year.trim() !== '' &&
-          (!item.financial_completed_year ||
-            item.financial_completed_year.trim() === ''),
+          item.technical_completed_year.trim() !== '',
       )
     } else if (statusFilter === 'financiallyCompleted') {
       filtered = filtered.filter(
@@ -527,6 +572,7 @@ function Proposals() {
   }, [
     searchText,
     centerFilter,
+    groupFilter,
     orderDateRange,
     enquiryDateRange,
     statusFilter,
@@ -539,6 +585,13 @@ function Proposals() {
       ...new Set(tableData.map((item) => item.center).filter(Boolean)),
     ]
     return centers.sort()
+  }, [tableData])
+
+  const uniqueGroups = useMemo(() => {
+    const groups = [
+      ...new Set(tableData.map((item) => item.group).filter(Boolean)),
+    ]
+    return groups.sort()
   }, [tableData])
 
   const handleExportExcel = () => {
@@ -641,19 +694,19 @@ function Proposals() {
         if (overdueDays > 0) {
           return (
             <span style={{ color: '#cf1322', fontWeight: 500 }}>
-               {overdueDays} days overdue
+              {overdueDays} days overdue
             </span>
           )
         } else if (overdueDays < 0) {
           return (
             <span style={{ color: '#389e0d', fontWeight: 500 }}>
-               {Math.abs(overdueDays)} days remaining
+              {Math.abs(overdueDays)} days remaining
             </span>
           )
         } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-               Due Today
+              Due Today
             </span>
           )
         }
@@ -670,22 +723,31 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 80,
+        width: 100,
         render: (_, record) => (
           <Space size="small">
             <Button
               size="small"
               type="link"
+              icon={<EyeOutlined />}
+              title="View"
+              onClick={(e) => {
+                e.stopPropagation()
+                openDetailModal(record)
+              }}
+            />
+            <Button
+              size="small"
+              type="link"
               icon={<EditOutlined />}
+              title="Edit"
               onClick={() => openEditModal(record)}
-            >
-              Edit
-            </Button>
+            />
           </Space>
         ),
       },
     ]
-  }, [openEditModal])
+  }, [openEditModal, openDetailModal])
 
   return (
     <>
@@ -705,7 +767,7 @@ function Proposals() {
                     >
                       <Statistic
                         title={<span className="text-white/90">Total Proposals</span>}
-                        value={statistics.totalProposals}
+                        value={proposalCount}
                         valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
@@ -715,7 +777,7 @@ function Proposals() {
                     >
                       <Statistic
                         title={<span className="text-white/90">Total Projects</span>}
-                        value={statistics.totalProjects}
+                        value={stats.totalProjects}
                         valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
@@ -725,7 +787,7 @@ function Proposals() {
                     >
                       <Statistic
                         title={<span className="text-white/90">Technically Completed</span>}
-                        value={statistics.technicallyCompleted}
+                        value={stats.technicallyCompleted}
                         valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
@@ -735,7 +797,7 @@ function Proposals() {
                     >
                       <Statistic
                         title={<span className="text-white/90">Financially Completed</span>}
-                        value={statistics.financiallyCompleted}
+                        value={stats.financiallyCompleted}
                         valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
@@ -745,7 +807,7 @@ function Proposals() {
                     >
                       <Statistic
                         title={<span className="text-white/90">Ongoing Projects</span>}
-                        value={statistics.pendingProjects}
+                        value={stats.ongoingProjects}
                         valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }}
                       />
                     </Card>
@@ -756,6 +818,7 @@ function Proposals() {
                       <Title level={4} className="!mb-0">Search & Filters</Title>
                     </div>
                     <Row gutter={[16, 16]}>
+                      {/* Row 1: Search, Project Number, Group, Clear */}
                       <Col xs={24} sm={12} md={6}>
                         <Input
                           placeholder="Search proposals... (type ID to search by PK)"
@@ -765,22 +828,6 @@ function Proposals() {
                           size="large"
                           allowClear
                         />
-                      </Col>
-                      <Col xs={24} sm={12} md={4} className="flex items-center">
-                        <Button
-                          onClick={() => {
-                            setSearchText('')
-                            setCenterFilter(null)
-                            setOrderDateRange(null)
-                            setEnquiryDateRange(null)
-                            setStatusFilter(null)
-                            setProjectNumberFilter(null)
-                          }}
-                          size="large"
-                          style={{ width: '100%' }}
-                        >
-                          Clear Filters
-                        </Button>
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <Select
@@ -798,18 +845,37 @@ function Proposals() {
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <Select
-                          placeholder="Filter by Center"
-                          value={centerFilter}
-                          onChange={setCenterFilter}
+                          placeholder="Filter by Group"
+                          value={groupFilter}
+                          onChange={setGroupFilter}
                           size="large"
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {uniqueCenters.map((center) => (
-                            <Select.Option key={center} value={center}>{center}</Select.Option>
+                          {uniqueGroups.map((group) => (
+                            <Select.Option key={group} value={group}>{group}</Select.Option>
                           ))}
                         </Select>
                       </Col>
+                      <Col xs={24} sm={12} md={6} className="flex items-center">
+                        <Button
+                          onClick={() => {
+                            setSearchText('')
+                            setCenterFilter(null)
+                            setGroupFilter(null)
+                            setOrderDateRange(null)
+                            setEnquiryDateRange(null)
+                            setStatusFilter(null)
+                            setProjectNumberFilter(null)
+                          }}
+                          size="large"
+                          style={{ width: '100%' }}
+                        >
+                          Clear Filters
+                        </Button>
+                      </Col>
+
+                      {/* Row 2: Order Date, Enquiry Date, Export */}
                       <Col xs={24} sm={12} md={6}>
                         <RangePicker
                           placeholder={['Start Order Date', 'End Order Date']}
@@ -830,7 +896,7 @@ function Proposals() {
                           format={DISPLAY_DATE_FORMAT}
                         />
                       </Col>
-                      <Col xs={24} sm={12} md={4} className="flex items-center justify-end">
+                      <Col xs={24} sm={12} md={12} className="flex items-center justify-end">
                         <Button
                           type="primary"
                           icon={<DownloadOutlined />}
@@ -863,10 +929,6 @@ function Proposals() {
                       scroll={{ x: 1800, y: 600 }}
                       sticky
                       bordered
-                      onRow={(record) => ({
-                        onClick: () => openDetailModal(record),
-                        style: { cursor: 'pointer' },
-                      })}
                     />
                   </div>
                 </div>

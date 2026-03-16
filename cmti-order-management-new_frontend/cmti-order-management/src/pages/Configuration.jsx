@@ -377,9 +377,9 @@ function Configuration({ projectRows = [] }) {
 
   const stageColumns = [
     {
-      title: 'Stage ID',
-      dataIndex: 'id',
-      key: 'id',
+      title: 'Sl no',
+      key: 'slNo',
+      render: (_, __, index) => index + 1,
     },
     {
       title: 'Stage Name',
@@ -576,7 +576,7 @@ function Configuration({ projectRows = [] }) {
             loading={centreLoading}
             pagination={{ pageSize: 10 }}
             bordered
-            title={() => 'Center'}
+            title={() => 'Centre'}
           />
         </div>
       )}

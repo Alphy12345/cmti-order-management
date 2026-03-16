@@ -148,7 +148,7 @@ export default function AccessControl() {
         { title: 'Name', dataIndex: 'name', key: 'name' },
         { title: 'Email', dataIndex: 'email', key: 'email' },
         { title: 'Role', dataIndex: 'role', key: 'role' },
-        { title: 'Center', dataIndex: 'center', key: 'center' },
+        { title: 'Centre', dataIndex: 'center', key: 'center' },
         { title: 'Group', dataIndex: 'group', key: 'group' },
         {
             title: 'Action',

@@ -12,6 +12,7 @@ import CHProjects from './pages/CHprojects'
 import Login from './pages/Login'
 import CreateLogin from './pages/CreateLogin'
 import Sidebar from './components/Sidebar'
+import ScientistProposals from './pages/ScientistProposals'
 
 import './App.css'
 import AdminNotification from './pages/AdminNotification'
@@ -75,8 +76,8 @@ function RoleProtectedLayout({ basePath }) {
     ProposalsComponent = CHProposals
     ProjectsComponent = CHProjects
   } else if (normalizedRole === 'scientist') {
-    // Scientist uses same components as GH
-    ProposalsComponent = GHProposals
+    // Scientist now has its own dedicated component
+    ProposalsComponent = ScientistProposals
     ProjectsComponent = GHProjects
   }
   // 'gh' already set as default above

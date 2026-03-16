@@ -7,6 +7,7 @@ import {
   DownloadOutlined,
   FilterOutlined,
   CalendarOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -80,7 +81,7 @@ const REQUEST_TYPE_OPTIONS = [
 ]
 
 const PROPOSAL_FIELDS = [
-  { name: 'id', label: 'SL NO', width: 120, fixed: 'left', inForm: false , render: (text, record, index) => index + 1,},
+  { name: 'id', label: 'SL NO', width: 120, fixed: 'left', inForm: false, render: (text, record, index) => index + 1, },
   { name: 'enquiry_date', label: 'Enquiry Date', width: 150 },
   { name: 'customer_type', label: 'Customer Type', width: 170 },
   { name: 'customer_name', label: 'Customer Name', width: 170 },
@@ -115,11 +116,11 @@ const PROPOSAL_FIELDS = [
   { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 210 },
   { name: 'order_value', label: 'Order Value', width: 170 },
   { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260, input: 'textarea' },
-  { name: 'center', label: 'Center', width: 150 },
+  { name: 'center', label: 'Centre', width: 150 },
   { name: 'group', label: 'Group', width: 150 },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
-  { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
+  { name: 'closer_report', label: 'Closure Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
   { name: 'status', label: 'Status', width: 150, input: 'select' },
@@ -181,6 +182,8 @@ function Proposals() {
   const [modalOpen, setModalOpen] = useState(false)
   const [liveExcelModalOpen, setLiveExcelModalOpen] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null)
+  const [detailModalOpen, setDetailModalOpen] = useState(false)
+  const [selectedRecord, setSelectedRecord] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [searchText, setSearchText] = useState('')
   const [centerFilter, setCenterFilter] = useState(null)
@@ -196,6 +199,12 @@ function Proposals() {
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
   const [proposalCount, setProposalCount] = useState(0)
+  const [stats, setStats] = useState({
+    totalProjects: 0,
+    technicallyCompleted: 0,
+    financiallyCompleted: 0,
+    ongoingProjects: 0
+  })
   const [centres, setCentres] = useState([])
   const [groups, setGroups] = useState([])
   const [selectedCentreId, setSelectedCentreId] = useState(null)
@@ -210,10 +219,10 @@ function Proposals() {
         params.append('start_date', dateRange[0].format('YYYY-MM-DD'))
         params.append('end_date', dateRange[1].format('YYYY-MM-DD'))
       }
-      
+
       const queryString = params.toString()
       const url = `${API_BASE_URL}/proposals/${queryString ? '?' + queryString : ''}`
-      
+
       const response = await fetch(url, {
         headers: { accept: 'application/json' },
       })
@@ -224,10 +233,10 @@ function Proposals() {
       const list = Array.isArray(payload)
         ? payload
         : Array.isArray(payload?.Data)
-        ? payload.Data
-        : Array.isArray(payload?.data)
-        ? payload.data
-        : []
+          ? payload.Data
+          : Array.isArray(payload?.data)
+            ? payload.data
+            : []
       // Debug logging for payments data
       if (list.length > 0) {
         console.log('First proposal payments:', list[0]?.payments)
@@ -266,6 +275,23 @@ function Proposals() {
     } catch (error) {
       console.error(error)
       message.error(error.message || 'Unable to fetch proposal count')
+    }
+  }, [])
+
+  const fetchStats = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/proposals/stats/global`, {
+        headers: { accept: 'application/json' },
+      })
+
+      if (!response.ok) {
+        throw new Error('Unable to fetch proposal stats')
+      }
+
+      const payload = await response.json()
+      setStats(payload)
+    } catch (error) {
+      console.error(error)
     }
   }, [])
 
@@ -324,6 +350,7 @@ function Proposals() {
 
     fetchProposals()
     fetchProposalCount()
+    fetchStats()
     fetchCentres()
     fetchGroups()
   }, [fetchProposals, fetchProposalCount, fetchCentres, fetchGroups])
@@ -363,6 +390,16 @@ function Proposals() {
     setEditingRecord(null)
     form.resetFields()
   }, [form])
+
+  const openDetailModal = useCallback((record) => {
+    setSelectedRecord(record)
+    setDetailModalOpen(true)
+  }, [])
+
+  const closeDetailModal = useCallback(() => {
+    setDetailModalOpen(false)
+    setSelectedRecord(null)
+  }, [])
 
   const handleSubmit = async (values) => {
     setSubmitLoading(true)
@@ -429,9 +466,7 @@ function Proposals() {
     const technicallyCompleted = tableData.filter(
       (item) =>
         item.technical_completed_year &&
-        item.technical_completed_year.trim() !== '' &&
-        !item.financial_completed_year &&
-        !item.financial_completed_year.trim() !== '',
+        item.technical_completed_year.trim() !== '',
     ).length
     const financiallyCompleted = tableData.filter(
       (item) =>
@@ -526,9 +561,7 @@ function Proposals() {
       filtered = filtered.filter(
         (item) =>
           item.technical_completed_year &&
-          item.technical_completed_year.trim() !== '' &&
-          !item.financial_completed_year &&
-          !item.financial_completed_year.trim() !== '',
+          item.technical_completed_year.trim() !== '',
       )
     } else if (statusFilter === 'financiallyCompleted') {
       filtered = filtered.filter(
@@ -544,12 +577,12 @@ function Proposals() {
           item.status === 'Ongoing',
       )
     }
-      else if(statusFilter === 'proposals'){
-        filtered = filtered.filter(
+    else if (statusFilter === 'proposals') {
+      filtered = filtered.filter(
         (item) =>
           !item.project_number && !item.project_number.trim() !== ''
       )
-      }
+    }
 
     setFilteredData(filtered)
   }, [searchText, centerFilter, orderDateRange, statusFilter, projectNumberFilter, tableData, selectedDateField, dateRange])
@@ -915,19 +948,19 @@ function Proposals() {
         if (overdueDays > 0) {
           return (
             <span style={{ color: '#cf1322', fontWeight: 500 }}>
-               {overdueDays} days overdue
+              {overdueDays} days overdue
             </span>
           )
         } else if (overdueDays < 0) {
           return (
             <span style={{ color: '#389e0d', fontWeight: 500 }}>
-               {Math.abs(overdueDays)} days remaining
+              {Math.abs(overdueDays)} days remaining
             </span>
           )
         } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-               Due Today
+              Due Today
             </span>
           )
         }
@@ -987,17 +1020,26 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 170,
+        width: 120,
         render: (_, record) => (
           <Space size="small">
             <Button
               size="small"
               type="link"
+              icon={<EyeOutlined />}
+              title="View"
+              onClick={(e) => {
+                e.stopPropagation()
+                openDetailModal(record)
+              }}
+            />
+            <Button
+              size="small"
+              type="link"
               icon={<EditOutlined />}
+              title="Edit"
               onClick={() => openEditModal(record)}
-            >
-              Edit
-            </Button>
+            />
             <Popconfirm
               title="Confirm delete"
               description="This action cannot be undone."
@@ -1011,10 +1053,9 @@ function Proposals() {
                 type="link"
                 danger
                 icon={<DeleteOutlined />}
+                title="Delete"
                 loading={deletingId === record.id}
-              >
-                Delete
-              </Button>
+              />
             </Popconfirm>
           </Space>
         ),
@@ -1059,7 +1100,7 @@ function Proposals() {
   const projectColumns = [
     { title: 'Project Number', dataIndex: 'project_number', key: 'project_number' },
     { title: 'Party Name', dataIndex: 'party_name', key: 'party_name' },
-    { title: 'Center', dataIndex: 'center', key: 'center' },
+    { title: 'Centre', dataIndex: 'center', key: 'center' },
     { title: 'Order Date', dataIndex: 'order_date', key: 'order_date', render: (value) => formatDate(value) },
     {
       title: 'Technical Year',
@@ -1100,7 +1141,7 @@ function Proposals() {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={()=> setStatusFilter('proposals')}
+                      onClick={() => setStatusFilter('proposals')}
                     >
                       <Statistic
                         title={
@@ -1126,7 +1167,7 @@ function Proposals() {
                             Total Projects
                           </span>
                         }
-                        value={statistics.totalProjects}
+                        value={stats.totalProjects}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1144,7 +1185,7 @@ function Proposals() {
                             Technically Completed
                           </span>
                         }
-                        value={statistics.technicallyCompleted}
+                        value={stats.technicallyCompleted}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1162,7 +1203,7 @@ function Proposals() {
                             Financially Completed
                           </span>
                         }
-                        value={statistics.financiallyCompleted}
+                        value={stats.financiallyCompleted}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1180,7 +1221,7 @@ function Proposals() {
                             Ongoing Projects
                           </span>
                         }
-                        value={statistics.pendingProjects}
+                        value={stats.ongoingProjects}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1244,7 +1285,7 @@ function Proposals() {
                       </Col>
                       <Col xs={24} sm={12} md={6}>
                         <Select
-                          placeholder="Filter by Center"
+                          placeholder="Filter by Centre"
                           value={centerFilter}
                           onChange={setCenterFilter}
                           size="large"
@@ -1393,7 +1434,7 @@ function Proposals() {
                           Proposal / Projects
                         </Title>
                         <p className="text-slate-500 text-sm">
-                          Showing {filteredData.length} of 
+                          Showing {filteredData.length} of
                           Proposals / Projects
                         </p>
                       </div>
@@ -1416,6 +1457,221 @@ function Proposals() {
           ]}
         />
       </div>
+
+      {/* Detail View Modal */}
+      <Modal
+        title="Proposal Details"
+        open={detailModalOpen}
+        onCancel={closeDetailModal}
+        width={1000}
+        footer={null}
+        maskClosable={false}
+      >
+        {selectedRecord && (
+          <div className="space-y-6">
+            {/* Customer Information */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-3 text-gray-700">Customer Information</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Enquiry Date</div>
+                  <div className="font-medium">{formatDate(selectedRecord.enquiry_date) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Customer Type</div>
+                  <div className="font-medium">{selectedRecord.customer_type || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Customer Name</div>
+                  <div className="font-medium">{selectedRecord.customer_name || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Address</div>
+                  <div className="font-medium">{selectedRecord.address || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Email</div>
+                  <div className="font-medium">{selectedRecord.email || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Phone No</div>
+                  <div className="font-medium">{selectedRecord.phone_no || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Alternate Contact</div>
+                  <div className="font-medium">{selectedRecord.alternate_contact_details || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Request Type</div>
+                  <div className="font-medium">{selectedRecord.request_type || '-'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quotation Information */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-3 text-gray-700">Quotation Information</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Quote Reference</div>
+                  <div className="font-medium">{selectedRecord.quote_reference || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Quote Date</div>
+                  <div className="font-medium">{formatDate(selectedRecord.quote_date) || '-'}</div>
+                </div>
+                <div className="border-b pb-2 md:col-span-2">
+                  <div className="text-sm text-gray-500">Quote Description</div>
+                  <div className="font-medium">{selectedRecord.quote_description || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Quote Amount</div>
+                  <div className="font-medium">{formatIndianNumber(selectedRecord.quote_amount) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Revised / Negotiated</div>
+                  <div className="font-medium">{selectedRecord.revised_negotiated || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Revised Quote Date</div>
+                  <div className="font-medium">{formatDate(selectedRecord.revised_negotiated_quote_date) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Revised Quote Amount</div>
+                  <div className="font-medium">{formatIndianNumber(selectedRecord.revised_negotiated_quote_amount) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Quotation Given By (Name)</div>
+                  <div className="font-medium">{selectedRecord.quotation_given_by_name || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Quotation Given By (Department)</div>
+                  <div className="font-medium">{selectedRecord.quotation_given_by_department || '-'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Project Information */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-3 text-gray-700">Project Information</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Project Number</div>
+                  <div className="font-medium">{selectedRecord.project_number || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Party Name</div>
+                  <div className="font-medium">{selectedRecord.party_name || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Activity</div>
+                  <div className="font-medium">{selectedRecord.activity || '-'}</div>
+                </div>
+                <div className="border-b pb-2 md:col-span-2">
+                  <div className="text-sm text-gray-500">Key Deliverables</div>
+                  <div className="font-medium">{selectedRecord.key_deliverables || '-'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Order Information */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-3 text-gray-700">Order Information</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Order Number</div>
+                  <div className="font-medium">{selectedRecord.order_number || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Order Date</div>
+                  <div className="font-medium">{formatDate(selectedRecord.order_date) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Delivery Date</div>
+                  <div className="font-medium">{formatDate(selectedRecord.delivery_date) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Extended Delivery Date</div>
+                  <div className="font-medium">{formatDate(selectedRecord.extended_delivery_date) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Date of Actual Commencement</div>
+                  <div className="font-medium">{formatDate(selectedRecord.date_of_actual_commencement) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Order Value</div>
+                  <div className="font-medium">{formatIndianNumber(selectedRecord.order_value) || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Dispatch Date</div>
+                  <div className="font-medium">{formatDate(selectedRecord.dispatch_date) || '-'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Organization Information */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-3 text-gray-700">Organization Information</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Project Coordinator</div>
+                  <div className="font-medium">{selectedRecord.project_co_ordinator || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Centre</div>
+                  <div className="font-medium">{selectedRecord.center || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Group</div>
+                  <div className="font-medium">{selectedRecord.group || '-'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Remarks & Reports */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-3 text-gray-700">Remarks & Reports</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-b pb-2 md:col-span-2">
+                  <div className="text-sm text-gray-500">Co-ordinator Remarks</div>
+                  <div className="font-medium">{selectedRecord.co_ordinator_remarks || '-'}</div>
+                </div>
+                <div className="border-b pb-2 md:col-span-2">
+                  <div className="text-sm text-gray-500">Closure Report</div>
+                  <div className="font-medium">{selectedRecord.closer_report || '-'}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Completion Status */}
+            <div className="border rounded-lg p-4 bg-gray-50">
+              <h3 className="text-lg font-semibold mb-3 text-gray-700">Completion Status</h3>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Technical Completed Year</div>
+                  <div className="font-medium">{selectedRecord.technical_completed_year || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Financial Completed Year</div>
+                  <div className="font-medium">{selectedRecord.financial_completed_year || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Status</div>
+                  <div className="font-medium">{selectedRecord.status || '-'}</div>
+                </div>
+                <div className="border-b pb-2">
+                  <div className="text-sm text-gray-500">Updated By</div>
+                  <div className="font-medium">{selectedRecord.updated_by || '-'}</div>
+                </div>
+                <div className="border-b pb-2 md:col-span-2">
+                  <div className="text-sm text-gray-500">PPM Remarks</div>
+                  <div className="font-medium">{selectedRecord.ppm_remarks || '-'}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <Modal
         title={editingRecord ? 'Edit Proposal' : 'Add Proposal'}
@@ -1458,11 +1714,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please enter ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please enter ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1501,11 +1757,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please enter ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please enter ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1543,11 +1799,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please enter ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please enter ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1585,11 +1841,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please enter ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please enter ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1627,11 +1883,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please enter ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please enter ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1679,11 +1935,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                            {
-                              required: true,
-                              message: `Please select ${field.label}`,
-                            },
-                          ]
+                          {
+                            required: true,
+                            message: `Please select ${field.label}`,
+                          },
+                        ]
                         : []
                     }
                   >
@@ -1726,11 +1982,11 @@ function Proposals() {
                   rules={
                     field.required
                       ? [
-                          {
-                            required: true,
-                            message: `Please enter ${field.label}`,
-                          },
-                        ]
+                        {
+                          required: true,
+                          message: `Please enter ${field.label}`,
+                        },
+                      ]
                       : []
                   }
                 >

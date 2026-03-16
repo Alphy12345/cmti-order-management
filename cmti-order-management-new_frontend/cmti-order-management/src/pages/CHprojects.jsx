@@ -908,7 +908,11 @@ function Projects() {
                   <div key={stage.stage_id} className="bg-white rounded-lg border p-4 mb-4">
                     <div className="flex items-center justify-between">
                       <Title level={4} className="!mb-0">
-                        <Tag color="blue">{stage.stage_id}</Tag> {stageName || 'Stage'}
+                        {(() => {
+                          const config = stageConfig.find((s) => s.id === stage.stage_id)
+                          const position = config?.position ?? stage.position ?? '-'
+                          return <Tag color="blue">{position}</Tag>
+                        })()} {stageName || 'Stage'}
                       </Title>
                       {canUpload && (
                         <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>

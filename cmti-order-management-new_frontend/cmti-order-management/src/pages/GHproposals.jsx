@@ -5,6 +5,7 @@ import {
   DownloadOutlined,
   FilterOutlined,
   EditOutlined,
+  EyeOutlined,
 } from '@ant-design/icons'
 import {
   Button,
@@ -97,9 +98,9 @@ const PROPOSAL_FIELDS = [
   { name: 'order_value', label: 'Order Value', width: 170 },
   { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260, input: 'textarea' },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
-  { name: 'center', label: 'Center', width: 150 },
+  { name: 'center', label: 'Centre', width: 150 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
-  { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
+  { name: 'closer_report', label: 'Closure Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
   { name: 'status', label: 'Status', width: 150, input: 'select' },
@@ -147,13 +148,14 @@ const TABLE_FIELDS = [
   { name: 'dispatch_date', label: 'Dispatch Date', width: 130 },
   { name: 'key_deliverables', label: 'Key Deliverables', width: 220, input: 'textarea' },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 180 },
-  { name: 'center', label: 'Center', width: 120 },
+  { name: 'center', label: 'Centre', width: 120 },
   { name: 'group', label: 'Group', width: 120 },
   { name: 'status', label: 'Status', width: 130, input: 'select' },
   { name: 'technical_completed_year', label: 'Technical Completion', width: 160 },
   { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
-  { name: 'closer_report', label: 'Closer Report', width: 180, input: 'textarea' },
+  { name: 'closer_report', label: 'Closure Report', width: 180, input: 'textarea' },
+  { name: 'updated_by', label: 'Updated By', width: 150 },
 ]
 
 // All fields for data mapping (internal use)
@@ -189,9 +191,9 @@ const ALL_FIELDS = [
   { name: 'order_value', label: 'Order Value', width: 170 },
   { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260, input: 'textarea' },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
-  { name: 'center', label: 'Center', width: 150 },
+  { name: 'center', label: 'Centre', width: 150 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
-  { name: 'closer_report', label: 'Closer Report', width: 200, input: 'textarea' },
+  { name: 'closer_report', label: 'Closure Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
   { name: 'status', label: 'Status', width: 150, input: 'select' },
@@ -258,8 +260,16 @@ function Proposals() {
   const [currentUserCenter, setCurrentUserCenter] = useState('')
   const [currentUserGroup, setCurrentUserGroup] = useState('')
   const [proposalCount, setProposalCount] = useState(0)
+  const [stats, setStats] = useState({
+    totalProposals: 0,
+    totalProjects: 0,
+    technicallyCompleted: 0,
+    financiallyCompleted: 0,
+    ongoingProjects: 0
+  })
   const [customerOptions, setCustomerOptions] = useState([])
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
+  const [userRole, setUserRole] = useState('')
 
   const openDetailModal = useCallback((record) => {
     setSelectedRecord(record)
@@ -298,7 +308,7 @@ function Proposals() {
     }
 
     setSubmitLoading(true)
-    
+
     // Build payload for coordinator-update endpoint (only allowed fields)
     const payload = {
       project_id: editingRecord.id,
@@ -374,29 +384,56 @@ function Proposals() {
     }
   }, [])
 
-  const fetchProposalsCount = async () => {
+  const fetchStats = useCallback(async () => {
+    let group = ''
     try {
-      let count = 0
       const rawUser = window.localStorage.getItem('ppm_user')
       if (rawUser) {
         const parsedUser = JSON.parse(rawUser)
-        if (parsedUser?.name) {
-          const encodedName = encodeURIComponent(parsedUser.name)
-          const url = `${API_BASE_URL}/master_proposals/by-indentor/${encodedName}/count`
-          const response = await fetch(url, { headers: { accept: 'application/json' } })
-          if (response.ok) {
-            const payload = await response.json()
-            count = payload?.count ?? 0
-          }
-        }
+        group = parsedUser?.group || ''
       }
-      setProposalCount(count)
+    } catch (err) {
+      console.error('Failed to parse ppm_user from localStorage', err)
+    }
+
+    if (!group) {
+      return
+    }
+
+    try {
+      const encodedGroup = encodeURIComponent(group)
+      const response = await fetch(`${API_BASE_URL}/proposals/stats/by-group/${encodedGroup}`, {
+        headers: { accept: 'application/json' },
+      })
+
+      if (!response.ok) {
+        throw new Error('Unable to fetch proposal stats')
+      }
+
+      const payload = await response.json()
+      setStats(payload)
+      setProposalCount(payload.totalProposals)
     } catch (error) {
       console.error(error)
     }
-  }
+  }, [])
 
   useEffect(() => {
+    try {
+      const rawUser = window.localStorage.getItem('ppm_user')
+      if (rawUser) {
+        const parsedUser = JSON.parse(rawUser)
+        if (parsedUser && parsedUser.name) {
+          setCurrentUserName(parsedUser.name)
+          setCurrentUserCenter(parsedUser.center || '')
+          setCurrentUserGroup(parsedUser.group || '')
+          setUserRole(parsedUser.role?.toLowerCase() || '')
+        }
+      }
+    } catch (error) {
+      console.error('Failed to read user from localStorage', error)
+    }
+
     // Trigger delivery notification check on every page load
     fetch(`${API_BASE_URL}/proposals/check-delivery-notifications`, {
       method: 'POST',
@@ -404,7 +441,7 @@ function Proposals() {
     }).catch(err => console.log('Notification check error:', err))
 
     fetchProposals()
-    fetchProposalsCount()
+    fetchStats()
   }, [fetchProposals])
 
   // Open/Close Coordinator Add Modal
@@ -514,13 +551,11 @@ function Proposals() {
   // Statistics
   const statistics = useMemo(() => {
     const totalProposals = tableData.length
-    const totalProjects = tableData.filter((item) => item.project_number?.trim()).length
+    const totalProjects = tableData.length
     const technicallyCompleted = tableData.filter(
       (item) =>
         item.technical_completed_year &&
-        item.technical_completed_year.trim() !== '' &&
-        (!item.financial_completed_year ||
-          item.financial_completed_year.trim() === ''),
+        item.technical_completed_year.trim() !== '',
     ).length
     const financiallyCompleted = tableData.filter(
       (item) => item.technical_completed_year?.trim() && item.financial_completed_year?.trim()
@@ -574,27 +609,27 @@ function Proposals() {
     }
 
     if (statusFilter) {
-      if (statusFilter === 'totalProjects')
-        filtered = filtered.filter((item) => item.project_number?.trim())
-      if (statusFilter === 'technicallyCompleted')
+      if (statusFilter === 'totalProjects') {
+        // Shown everything in the table for Scientists/GH, as they treat everything assigned as a "Project"
+        filtered = tableData
+      } else if (statusFilter === 'technicallyCompleted') {
         filtered = filtered.filter(
           (item) =>
             item.technical_completed_year &&
-            item.technical_completed_year.trim() !== '' &&
-            (!item.financial_completed_year ||
-              item.financial_completed_year.trim() === ''),
+            item.technical_completed_year.trim() !== '',
         )
-      if (statusFilter === 'financiallyCompleted')
+      } else if (statusFilter === 'financiallyCompleted') {
         filtered = filtered.filter(
           (item) => item.technical_completed_year?.trim() && item.financial_completed_year?.trim()
         )
-      if (statusFilter === 'pendingProjects')
+      } else if (statusFilter === 'pendingProjects') {
         filtered = filtered.filter(
           (item) =>
             item.status === 'Ongoing',
         )
-      if (statusFilter === 'proposals')
+      } else if (statusFilter === 'proposals') {
         filtered = filtered.filter((item) => !item.project_number?.trim())
+      }
     }
 
     setFilteredData(filtered)
@@ -723,19 +758,19 @@ function Proposals() {
         if (overdueDays > 0) {
           return (
             <span style={{ color: '#cf1322', fontWeight: 500 }}>
-               {overdueDays} days overdue
+              {overdueDays} days overdue
             </span>
           )
         } else if (overdueDays < 0) {
           return (
             <span style={{ color: '#389e0d', fontWeight: 500 }}>
-               {Math.abs(overdueDays)} days remaining
+              {Math.abs(overdueDays)} days remaining
             </span>
           )
         } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-               Due Today
+              Due Today
             </span>
           )
         }
@@ -753,17 +788,31 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 80,
+        width: 100,
         render: (_, record) => (
           <Space size="small">
-            <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
-              Edit
-            </Button>
+            <Button
+              size="small"
+              type="link"
+              icon={<EyeOutlined />}
+              title="View"
+              onClick={(e) => {
+                e.stopPropagation()
+                openDetailModal(record)
+              }}
+            />
+            <Button
+              size="small"
+              type="link"
+              icon={<EditOutlined />}
+              title="Edit"
+              onClick={() => openEditModal(record)}
+            />
           </Space>
         ),
       },
     ]
-  }, [openEditModal])
+  }, [openEditModal, openDetailModal])
 
   return (
     <>
@@ -778,20 +827,20 @@ function Proposals() {
                     <Statistic title={<span className="text-white/90">Total Proposals</span>} value={proposalCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer" onClick={() => setStatusFilter('totalProjects')}>
-                    <Statistic title={<span className="text-white/90">Total Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Total Projects</span>} value={stats.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white cursor-pointer" onClick={() => setStatusFilter('technicallyCompleted')}>
-                    <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Technically Completed</span>} value={stats.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer" onClick={() => setStatusFilter('financiallyCompleted')}>
-                    <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Financially Completed</span>} value={stats.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white cursor-pointer" onClick={() => setStatusFilter('pendingProjects')}>
-                    <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={stats.ongoingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                 </div>
 
-                
+
               </div>
 
               {/* Search & Filters */}
@@ -843,14 +892,14 @@ function Proposals() {
                     <p className="text-slate-500 text-sm">Showing {filteredData.length} records</p>
                   </div>
                   <Button
-                  type="primary"
-                  size="large"
-                  icon={<PlusOutlined />}
-                  onClick={openCoordinatorAddModal}
-                  className="bg-gradient-to-r from-green-500 to-green-600 border-none shadow-md hover:shadow-lg"
-                >
-                  Add Proposal
-                </Button>
+                    type="primary"
+                    size="large"
+                    icon={<PlusOutlined />}
+                    onClick={openCoordinatorAddModal}
+                    className="bg-gradient-to-r from-green-500 to-green-600 border-none shadow-md hover:shadow-lg"
+                  >
+                    Add Proposal
+                  </Button>
                 </div>
                 <Table
                   rowKey="key"
@@ -861,10 +910,6 @@ function Proposals() {
                   scroll={{ x: 1800, y: 600 }}
                   sticky
                   bordered
-                  onRow={(record) => ({
-                    onClick: () => openDetailModal(record),
-                    style: { cursor: 'pointer' },
-                  })}
                 />
               </div>
             </div>
@@ -928,7 +973,12 @@ function Proposals() {
       >
         <Form form={coordinatorForm} layout="vertical" onFinish={handleCoordinatorSubmit}>
           <Row gutter={[16, 16]}>
-            {COORDINATOR_ADD_FIELDS.map((fieldName) => {
+            {COORDINATOR_ADD_FIELDS.filter((fieldName) => {
+              if (userRole === 'scientist') {
+                return !['quotation_given_by_department', 'center', 'group'].includes(fieldName)
+              }
+              return true
+            }).map((fieldName) => {
               const field = PROPOSAL_FIELDS.find((f) => f.name === fieldName)
               if (!field) return null
 
@@ -1001,22 +1051,19 @@ function Proposals() {
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Row gutter={[16, 16]}>
-            {TABLE_FIELDS.map((field) => {
+            {TABLE_FIELDS.filter(field => {
               const allowedEditFields = [
                 'extended_delivery_date',
                 'co_ordinator_remarks',
                 'technical_completed_year',
                 'updated_by',
               ]
-
-              // When editing, only show the allowed edit fields
-              if (editingRecord && !allowedEditFields.includes(field.name)) {
-                return null
-              }
+              return !editingRecord || allowedEditFields.includes(field.name)
+            }).map((field) => {
 
               const isTextArea = field.input === 'textarea'
               const isUpdatedByField = field.name === 'updated_by'
-              
+
               // Date fields that should use DatePicker
               const dateFields = [
                 'enquiry_date',
@@ -1029,12 +1076,12 @@ function Proposals() {
                 'dispatch_date',
               ]
               const isDateField = dateFields.includes(field.name)
-              
+
               return (
                 <Col span={12} key={field.name}>
-                  <Form.Item 
-                    name={field.name} 
-                    label={field.label} 
+                  <Form.Item
+                    name={field.name}
+                    label={field.label}
                     rules={field.required ? [{ required: true, message: `${field.label} is required` }] : []}
                     getValueProps={(value) => ({
                       value: value && isDateField
@@ -1054,9 +1101,9 @@ function Proposals() {
                     {isTextArea ? (
                       <TextArea rows={3} placeholder={`Enter ${field.label}`} disabled={isUpdatedByField && editingRecord} />
                     ) : isDateField ? (
-                      <DatePicker 
-                        style={{ width: '100%' }} 
-                        format="DD.MM.YYYY" 
+                      <DatePicker
+                        style={{ width: '100%' }}
+                        format="DD.MM.YYYY"
                         placeholder={`Select ${field.label}`}
                       />
                     ) : (

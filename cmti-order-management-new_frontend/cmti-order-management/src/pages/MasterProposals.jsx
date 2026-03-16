@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   PlusOutlined,
   SearchOutlined,
   DownloadOutlined,
 } from '@ant-design/icons'
 import {
   Button,
+  Descriptions,
   Form,
   Input,
   Modal,
@@ -20,6 +22,7 @@ import {
   Select,
   Row,
   Col,
+  Tooltip,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -76,10 +79,26 @@ function MasterProposals() {
   const [departmentFilter, setDepartmentFilter] = useState(null)
   const [quoteDateRange, setQuoteDateRange] = useState(null)
 
+  const [viewModalOpen, setViewModalOpen] = useState(false)
+  const [viewingRecord, setViewingRecord] = useState(null)
   const [importPreview, setImportPreview] = useState(null)
   const [importModalOpen, setImportModalOpen] = useState(false)
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
+
+  const renderViewValue = useCallback(
+    (fieldName, value) => {
+      if (value === null || value === undefined || value === '') return '-'
+      if (fieldName === 'quote_date' || fieldName === 'date') {
+        return formatDate(value)
+      }
+      if (fieldName === 'quote_amt' || fieldName === 'amount') {
+        return formatIndianNumber(value)
+      }
+      return String(value)
+    },
+    [],
+  )
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -314,6 +333,16 @@ function MasterProposals() {
     }
   }
 
+  const openViewModal = useCallback((record) => {
+    setViewingRecord(record)
+    setViewModalOpen(true)
+  }, [])
+
+  const closeViewModal = useCallback(() => {
+    setViewModalOpen(false)
+    setViewingRecord(null)
+  }, [])
+
   const openEditModal = useCallback(
     (record) => {
       setEditingRecord(record)
@@ -461,14 +490,22 @@ function MasterProposals() {
         fixed: 'right',
         render: (_, record) => (
           <Space size="small">
-            <Button
-              size="small"
-              type="link"
-              icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
-            >
-              Edit
-            </Button>
+            <Tooltip title="View">
+              <Button
+                size="small"
+                type="link"
+                icon={<EyeOutlined />}
+                onClick={() => openViewModal(record)}
+              />
+            </Tooltip>
+            <Tooltip title="Edit">
+              <Button
+                size="small"
+                type="link"
+                icon={<EditOutlined />}
+                onClick={() => openEditModal(record)}
+              />
+            </Tooltip>
             <Popconfirm
               title="Confirm delete"
               okText="Delete"
@@ -476,15 +513,15 @@ function MasterProposals() {
               cancelText="Cancel"
               onConfirm={() => handleDelete(record)}
             >
-              <Button
-                size="small"
-                type="link"
-                danger
-                icon={<DeleteOutlined />}
-                loading={deletingId === record.id}
-              >
-                Delete
-              </Button>
+              <Tooltip title="Delete">
+                <Button
+                  size="small"
+                  type="link"
+                  danger
+                  icon={<DeleteOutlined />}
+                  loading={deletingId === record.id}
+                />
+              </Tooltip>
             </Popconfirm>
           </Space>
         ),
@@ -601,6 +638,32 @@ function MasterProposals() {
 
         <AcknowledgeProposalsTable fetchProposalsTrigger={fetchProposals} />
       </div>
+
+      {/* View Modal */}
+      <Modal
+        title="View Master Proposal"
+        open={viewModalOpen}
+        onCancel={closeViewModal}
+        footer={[
+          <Button key="close" onClick={closeViewModal}>
+            Close
+          </Button>,
+        ]}
+        maskClosable={false}
+        width="90%"
+        style={{ maxWidth: 800 }}
+      >
+        <Descriptions
+          bordered
+          size="small"
+          column={{ xs: 1, sm: 2 }}
+          items={MASTER_FIELDS.map((field) => ({
+            key: field.name,
+            label: field.label,
+            children: renderViewValue(field.name, viewingRecord?.[field.name]),
+          }))}
+        />
+      </Modal>
 
       {/* Edit / Add Modal */}
       <Modal

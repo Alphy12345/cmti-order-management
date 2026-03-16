@@ -929,7 +929,11 @@ function GHprojects() {
                   <div key={stage.stage_id ?? stageName} className="border rounded-xl p-6 bg-gray-50">
                     <div className="flex justify-between items-center mb-5">
                       <Title level={4} className="!mb-0">
-                        <Tag color="blue">{stage.stage_id}</Tag> {stageName || 'Stage'}
+                        {(() => {
+                          const config = stageConfig.find((s) => s.id === stage.stage_id)
+                          const position = config?.position ?? stage.position ?? '-'
+                          return <Tag color="blue">{position}</Tag>
+                        })()} {stageName || 'Stage'}
                       </Title>
                       {canUpload && (
                         <Button size="small" type="primary" icon={<UploadOutlined />} onClick={() => handleOpenUploadModal(stage)}>

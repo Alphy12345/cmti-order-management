@@ -5,6 +5,7 @@ import { formatDateTime } from "../config/date.js";
 
 const GhNotification = () => {
   const [notifications, setNotifications] = useState([]);
+  const [searchText, setSearchText] = useState('');
 
   useEffect(() => {
 
@@ -20,6 +21,19 @@ const GhNotification = () => {
       })
       .catch((error) => console.error("Error fetching notifications:", error));
   }, []);
+
+  // Filter notifications based on search text
+  const filteredNotifications = notifications.filter((n) => {
+    if (!searchText) return true;
+    const searchLower = searchText.toLowerCase();
+    return (
+      n.message?.toLowerCase().includes(searchLower) ||
+      n.user_name?.toLowerCase().includes(searchLower) ||
+      n.project_number?.toString().includes(searchLower) ||
+      n.proposal_name?.toLowerCase().includes(searchLower) ||
+      n.document_name?.toLowerCase().includes(searchLower)
+    );
+  });
 
   const markAsRead = (id) => {
     axios
@@ -40,7 +54,7 @@ const GhNotification = () => {
       }}
     >
       {/* Remove or increase maxWidth — this is the key change */}
-      <div style={{ maxWidth: "1500px", margin: "0 auto" }}>  {/* Changed from 800px to 1200px */}
+      <div style={{ maxWidth: "1500px", margin: "0 auto" }}>  
         {/* Header */}
         <div style={{ textAlign: "center", marginBottom: "40px" }}>
           <h1
@@ -54,14 +68,40 @@ const GhNotification = () => {
             Notifications
           </h1>
           <p style={{ color: "#64748b", fontSize: "16px" }}>
-            {notifications.length > 0
-              ? `You have ${notifications.length} unread notification${notifications.length > 1 ? "s" : ""}`
-              : "No new notifications"}
+            {filteredNotifications.length > 0
+              ? `You have ${filteredNotifications.length} notification${filteredNotifications.length > 1 ? "s" : ""}`
+              : searchText ? "No matching notifications found" : "No new notifications"}
           </p>
         </div>
 
+        {/* Search Bar */}
+        <div style={{ marginBottom: "16px", display: "flex", justifyContent: "center" }}>
+          <input
+            type="text"
+            placeholder="Search notifications..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            style={{
+              width: "400px",
+              maxWidth: "100%",
+              padding: "8px 14px",
+              borderRadius: "8px",
+              border: "1px solid #d1d5db",
+              fontSize: "14px",
+              outline: "none",
+              backgroundColor: "white",
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = "#3b82f6";
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = "#d1d5db";
+            }}
+          />
+        </div>
+
         {/* Empty State */}
-        {notifications.length === 0 ? (
+        {filteredNotifications.length === 0 ? (
           <div
             style={{
               background: "white",
@@ -96,7 +136,7 @@ const GhNotification = () => {
         ) : (
           /* Notifications List */
           <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-            {notifications.map((n, i) => (
+            {filteredNotifications.map((n, i) => (
               <div
                 key={n.id}
                 style={{
