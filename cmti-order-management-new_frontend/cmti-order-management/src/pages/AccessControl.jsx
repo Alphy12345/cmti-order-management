@@ -241,11 +241,11 @@ export default function AccessControl() {
 
                     <Form.Item
                         name="center"
-                        label="Center"
-                        rules={[{ required: true, message: 'Please select a center' }]}
+                        label="Centre"
+                        rules={[{ required: true, message: 'Please select a centre' }]}
                     >
                         <Select
-                            placeholder="Select a center"
+                            placeholder="Select a centre"
                             loading={loadingCentres}
                             showSearch
                             optionFilterProp="children"
@@ -264,7 +264,7 @@ export default function AccessControl() {
                         rules={[{message: 'Please select a group' }]}
                     >
                         <Select
-                            placeholder="Select a group (based on center)"
+                            placeholder="Select a group (based on centre)"
                             disabled={!selectedCentreCode} // Optional: disable until center selected
                             showSearch
                             optionFilterProp="children"

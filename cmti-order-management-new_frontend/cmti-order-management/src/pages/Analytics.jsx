@@ -141,13 +141,12 @@ function Analytics() {
     fetchOngoingByDept()
   }, [])
 
-  const statistics = useMemo(() => {
+  const stats = useMemo(() => {
     const tableData = proposals || []
     const totalProposals = tableData.length
     const totalProjects = tableData.filter((item) => item.project_number && item.project_number.toString().trim() !== '').length
-    const technicallyCompleted = tableData.filter((item) => 
-      item.technical_completed_year && item.technical_completed_year.trim() !== '' &&
-      !item.financial_completed_year && !item.financial_completed_year.trim() !== ''
+    const technicallyCompleted = tableData.filter(
+      (item) => item.technical_completed_year && item.technical_completed_year.trim() !== '',
     ).length
     const financiallyCompleted = tableData.filter((item) => 
       item.technical_completed_year && item.technical_completed_year.toString().trim() !== '' &&
@@ -589,7 +588,7 @@ function Analytics() {
           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
             <Statistic 
               title={<span style={{ color: '#fff' }}>Total Projects</span>} 
-              value={statistics.totalProjects} 
+              value={stats.totalProjects} 
               valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
             />
           </Card>
@@ -598,7 +597,7 @@ function Analytics() {
           <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
             <Statistic 
               title={<span style={{ color: '#fff' }}>Technically Completed</span>} 
-              value={statistics.technicallyCompleted} 
+              value={stats.technicallyCompleted} 
               valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
             />
           </Card>
@@ -607,7 +606,7 @@ function Analytics() {
           <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
             <Statistic 
               title={<span style={{ color: '#fff' }}>Financially Completed</span>} 
-              value={statistics.financiallyCompleted} 
+              value={stats.financiallyCompleted} 
               valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
             />
           </Card>
@@ -616,7 +615,7 @@ function Analytics() {
           <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer">
             <Statistic 
               title={<span style={{ color: '#fff' }}>Ongoing Projects</span>} 
-              value={statistics.pendingProjects} 
+              value={stats.pendingProjects} 
               valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} 
             />
           </Card>

@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   PlusOutlined,
   SearchOutlined,
   DownloadOutlined,
   FilterOutlined,
   CalendarOutlined,
-  EyeOutlined,
 } from '@ant-design/icons'
 import {
+  AutoComplete,
   Button,
+  Descriptions,
+  Divider,
   Form,
   Input,
   Modal,
@@ -81,7 +84,7 @@ const REQUEST_TYPE_OPTIONS = [
 ]
 
 const PROPOSAL_FIELDS = [
-  { name: 'id', label: 'SL NO', width: 120, fixed: 'left', inForm: false, render: (text, record, index) => index + 1, },
+  { name: 'id', label: 'SL NO', width: 120, fixed: 'left', inForm: false , render: (text, record, index) => index + 1,},
   { name: 'enquiry_date', label: 'Enquiry Date', width: 150 },
   { name: 'customer_type', label: 'Customer Type', width: 170 },
   { name: 'customer_name', label: 'Customer Name', width: 170 },
@@ -180,13 +183,13 @@ function Proposals() {
   const [tableLoading, setTableLoading] = useState(false)
   const [submitLoading, setSubmitLoading] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
-  const [liveExcelModalOpen, setLiveExcelModalOpen] = useState(false)
-  const [editingRecord, setEditingRecord] = useState(null)
   const [detailModalOpen, setDetailModalOpen] = useState(false)
   const [selectedRecord, setSelectedRecord] = useState(null)
+  const [liveExcelModalOpen, setLiveExcelModalOpen] = useState(false)
+  const [editingRecord, setEditingRecord] = useState(null)
   const [deletingId, setDeletingId] = useState(null)
   const [searchText, setSearchText] = useState('')
-  const [centerFilter, setCenterFilter] = useState(null)
+  const [centreFilter, setCentreFilter] = useState(null)
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
@@ -198,16 +201,59 @@ function Proposals() {
   const fileInputRef = useRef(null)
   const [bulkImportLoading, setBulkImportLoading] = useState(false)
   const [currentUserName, setCurrentUserName] = useState('')
+  const [allCustomerSuggestions, setAllCustomerSuggestions] = useState([])
+  const [customerOptions, setCustomerOptions] = useState([])
+  const [addressOptions, setAddressOptions] = useState([])
+  const [phoneOptions, setPhoneOptions] = useState([])
+  const [emailOptions, setEmailOptions] = useState([])
+  const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
   const [proposalCount, setProposalCount] = useState(0)
-  const [stats, setStats] = useState({
-    totalProjects: 0,
-    technicallyCompleted: 0,
-    financiallyCompleted: 0,
-    ongoingProjects: 0
-  })
   const [centres, setCentres] = useState([])
   const [groups, setGroups] = useState([])
   const [selectedCentreId, setSelectedCentreId] = useState(null)
+
+  const openDetailModal = useCallback((record) => {
+    setSelectedRecord(record)
+    setDetailModalOpen(true)
+  }, [])
+
+  const closeDetailModal = useCallback(() => {
+    setDetailModalOpen(false)
+    setSelectedRecord(null)
+  }, [])
+
+  const renderDetailValue = useCallback((fieldName, value) => {
+    if (value === undefined || value === null || value === '') return '-'
+
+    const dateFields = new Set([
+      'enquiry_date',
+      'quote_date',
+      'revised_negotiated_quote_date',
+      'order_date',
+      'delivery_date',
+      'extended_delivery_date',
+      'date_of_actual_commencement',
+      'dispatch_date',
+      'created_at',
+      'updated_at',
+    ])
+
+    const amountFields = new Set([
+      'quote_amount',
+      'revised_negotiated_quote_amount',
+      'order_value',
+    ])
+
+    if (dateFields.has(fieldName)) {
+      return formatDate(value)
+    }
+
+    if (amountFields.has(fieldName)) {
+      return formatIndianNumber(value)
+    }
+
+    return String(value)
+  }, [])
 
   const fetchProposals = useCallback(async () => {
     setTableLoading(true)
@@ -219,10 +265,10 @@ function Proposals() {
         params.append('start_date', dateRange[0].format('YYYY-MM-DD'))
         params.append('end_date', dateRange[1].format('YYYY-MM-DD'))
       }
-
+      
       const queryString = params.toString()
       const url = `${API_BASE_URL}/proposals/${queryString ? '?' + queryString : ''}`
-
+      
       const response = await fetch(url, {
         headers: { accept: 'application/json' },
       })
@@ -233,10 +279,10 @@ function Proposals() {
       const list = Array.isArray(payload)
         ? payload
         : Array.isArray(payload?.Data)
-          ? payload.Data
-          : Array.isArray(payload?.data)
-            ? payload.data
-            : []
+        ? payload.Data
+        : Array.isArray(payload?.data)
+        ? payload.data
+        : []
       // Debug logging for payments data
       if (list.length > 0) {
         console.log('First proposal payments:', list[0]?.payments)
@@ -278,23 +324,6 @@ function Proposals() {
     }
   }, [])
 
-  const fetchStats = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/proposals/stats/global`, {
-        headers: { accept: 'application/json' },
-      })
-
-      if (!response.ok) {
-        throw new Error('Unable to fetch proposal stats')
-      }
-
-      const payload = await response.json()
-      setStats(payload)
-    } catch (error) {
-      console.error(error)
-    }
-  }, [])
-
   const fetchCentres = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/centres/`, {
@@ -329,6 +358,173 @@ function Proposals() {
     }
   }, [])
 
+  const fetchCustomerSuggestions = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) {
+        throw new Error('Unable to fetch customer suggestions')
+      }
+      const payload = await response.json()
+      const normalized = Array.isArray(payload) ? payload.map(customer => ({
+        name: customer.name,
+        customer_type: customer.customer_type,
+        address: null,
+        email: customer.email,
+        phone_no: customer.phone_no,
+        alternate_contact_details: customer.alternate_contact_details,
+        addresses: customer.address ? [customer.address] : []
+      })).filter(c => c.name && c.name.trim()) : []
+      setAllCustomerSuggestions(normalized)
+      return normalized
+    } catch (error) {
+      console.error('Customer suggestions fetch error:', error)
+      setAllCustomerSuggestions([])
+      return []
+    }
+  }, [])
+
+  const searchCustomers = useCallback(
+    async (searchValue) => {
+      if (!searchValue || !searchValue.trim()) {
+        setCustomerOptions([])
+        return
+      }
+
+      const normalized = searchValue.trim().toLowerCase()
+
+      // Ensure we have the full list fetched
+      let customerList = allCustomerSuggestions
+      if (!customerList.length) {
+        customerList = await fetchCustomerSuggestions()
+      }
+
+      const matches = (customerList || [])
+        .filter((c) => c?.name?.toLowerCase().includes(normalized))
+        .slice(0, 20)
+
+      const options = matches.map((customer) => ({
+        value: customer.name,
+        label: `${customer.name} ${customer.customer_type ? `(${customer.customer_type})` : ''}`,
+        customer,
+      }))
+
+      setCustomerOptions(options)
+    },
+    [allCustomerSuggestions, fetchCustomerSuggestions],
+  )
+
+  const searchAddresses = useCallback(
+    async (searchValue) => {
+      if (!searchValue || !searchValue.trim()) {
+        setAddressOptions([])
+        return
+      }
+
+      const currentName = form.getFieldValue('customer_name')?.trim()
+      if (!currentName) {
+        setAddressOptions([])
+        return
+      }
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/customers/addresses?name=${encodeURIComponent(currentName)}`,
+          { headers: { accept: 'application/json' } },
+        )
+        if (!response.ok) throw new Error('Unable to fetch addresses')
+        const payload = await response.json()
+        const addresses = Array.isArray(payload) ? payload : []
+        const normalized = searchValue.trim().toLowerCase()
+        const matches = addresses
+          .filter((a) => a?.toLowerCase().includes(normalized))
+          .slice(0, 20)
+        setAddressOptions(matches.map((a) => ({ value: a, label: a })))
+      } catch (error) {
+        console.error('Address search error:', error)
+        setAddressOptions([])
+      }
+    },
+    [form],
+  )
+
+  const searchEmails = useCallback(
+    async (searchValue) => {
+      if (!searchValue || !searchValue.trim()) {
+        setEmailOptions([])
+        return
+      }
+
+      const normalized = searchValue.trim().toLowerCase()
+
+      let customerList = allCustomerSuggestions
+      if (!customerList.length) {
+        customerList = await fetchCustomerSuggestions()
+      }
+
+      const matches = (customerList || [])
+        .map((c) => c.email)
+        .filter(Boolean)
+        .filter((e) => e.toLowerCase().includes(normalized))
+        .slice(0, 20)
+
+      setEmailOptions(matches.map((e) => ({ value: e, label: e })))
+    },
+    [allCustomerSuggestions, fetchCustomerSuggestions],
+  )
+
+  const searchPhones = useCallback(
+    async (searchValue) => {
+      if (!searchValue || !searchValue.trim()) {
+        setPhoneOptions([])
+        return
+      }
+
+      const normalized = searchValue.trim().toLowerCase()
+
+      let customerList = allCustomerSuggestions
+      if (!customerList.length) {
+        customerList = await fetchCustomerSuggestions()
+      }
+
+      const matches = (customerList || [])
+        .map((c) => c.phone_no)
+        .filter(Boolean)
+        .filter((p) => p.toLowerCase().includes(normalized))
+        .slice(0, 20)
+
+      setPhoneOptions(matches.map((p) => ({ value: p, label: p })))
+    },
+    [allCustomerSuggestions, fetchCustomerSuggestions],
+  )
+
+  const handleCustomerSelect = useCallback(
+    (value, option) => {
+      const customer = option?.customer
+      if (!customer) return
+
+      const addresses = Array.isArray(customer.addresses) ? customer.addresses : []
+      setAddressOptions(addresses.map((a) => ({ value: a, label: a })))
+
+      const phones = []
+      if (customer.phone_no) phones.push(customer.phone_no)
+      if (customer.alternate_contact_details) phones.push(customer.alternate_contact_details)
+      setPhoneOptions(Array.from(new Set(phones)).map((p) => ({ value: p, label: p })))
+
+      const emails = []
+      if (customer.email) emails.push(customer.email)
+      setEmailOptions(Array.from(new Set(emails)).map((e) => ({ value: e, label: e })))
+
+      // Only pre-fill the customer name/type; let the user choose / type other contact details
+      form.setFieldsValue({
+        customer_name: customer.name,
+        customer_type: customer.customer_type || '',
+      })
+    },
+    [form],
+  )
+
   useEffect(() => {
     try {
       const rawUser = window.localStorage.getItem('ppm_user')
@@ -350,7 +546,6 @@ function Proposals() {
 
     fetchProposals()
     fetchProposalCount()
-    fetchStats()
     fetchCentres()
     fetchGroups()
   }, [fetchProposals, fetchProposalCount, fetchCentres, fetchGroups])
@@ -390,16 +585,6 @@ function Proposals() {
     setEditingRecord(null)
     form.resetFields()
   }, [form])
-
-  const openDetailModal = useCallback((record) => {
-    setSelectedRecord(record)
-    setDetailModalOpen(true)
-  }, [])
-
-  const closeDetailModal = useCallback(() => {
-    setDetailModalOpen(false)
-    setSelectedRecord(null)
-  }, [])
 
   const handleSubmit = async (values) => {
     setSubmitLoading(true)
@@ -458,101 +643,31 @@ function Proposals() {
   )
 
   // Calculate statistics
-  const statistics = useMemo(() => {
-    const totalProposals = tableData.length
-    const totalProjects = tableData.filter(
-      (item) => item.project_number && item.project_number.trim() !== '',
-    ).length
-    const technicallyCompleted = tableData.filter(
-      (item) =>
-        item.technical_completed_year &&
-        item.technical_completed_year.trim() !== '',
-    ).length
-    const financiallyCompleted = tableData.filter(
-      (item) =>
-        item.technical_completed_year &&
-        item.technical_completed_year.trim() !== '' &&
-        item.financial_completed_year &&
-        item.financial_completed_year.trim() !== '',
-    ).length
-    const pendingProjects = tableData.filter(
-      (item) =>
-        item.status === 'Ongoing',
-    ).length
-    return {
-      totalProposals,
-      totalProjects,
-      technicallyCompleted,
-      financiallyCompleted,
-      pendingProjects,
-    }
-  }, [tableData])
-
-  // Filter data based on search and filters
   useEffect(() => {
     let filtered = [...tableData]
 
-    // Search filter
     if (searchText) {
-      const s = searchText.trim()
-      // If user typed only digits, treat it as ID (PK) search
-      if (/^\d+$/.test(s)) {
-        filtered = filtered.filter((item) => String(item.id) === s)
-      } else {
-        const searchLower = s.toLowerCase()
-        filtered = filtered.filter((item) =>
-          Object.values(item).some((val) =>
-            String(val).toLowerCase().includes(searchLower),
-          ),
-        )
-      }
+      const lowerSearch = searchText.toLowerCase()
+      filtered = filtered.filter((item) =>
+        Object.entries(item).some(([key, value]) => {
+          if (key === 'id' && value !== undefined && value !== null) {
+            return String(value).toLowerCase() === lowerSearch
+          }
+          return value !== undefined && value !== null && String(value).toLowerCase().includes(lowerSearch)
+        })
+      )
     }
 
-    // Center filter
-    if (centerFilter) {
-      filtered = filtered.filter((item) => item.center === centerFilter)
-    }
-
-    // Project number prefix filter (GSP, ISP, GAP, ILP, DPP, LSP, CLP, SO)
     if (projectNumberFilter) {
-      const prefix = projectNumberFilter.toUpperCase()
-      filtered = filtered.filter((item) => {
-        const pn = (item.project_number || '').toString().trim().toUpperCase()
-        if (!pn) return false
-        return pn.startsWith(prefix)
-      })
+      filtered = filtered.filter((item) =>
+        item.project_number && item.project_number.toUpperCase().startsWith(projectNumberFilter),
+      )
     }
 
-    // Order date filter
-    if (orderDateRange && orderDateRange.length === 2) {
-      filtered = filtered.filter((item) => {
-        if (!item.order_date) return false
-        const orderDate = dayjs(item.order_date)
-        if (!orderDate.isValid()) return false
-        const start = orderDateRange[0].startOf('day')
-        const end = orderDateRange[1].endOf('day')
-        return (
-          orderDate.isSameOrAfter(start) && orderDate.isSameOrBefore(end)
-        )
-      })
+    if (centreFilter) {
+      filtered = filtered.filter((item) => item.center === centreFilter)
     }
 
-    if (dateRange && dateRange.length === 2 && selectedDateField) {
-      filtered = filtered.filter((item) => {
-        const dateValue = item[selectedDateField]
-        if (!dateValue) return false
-        const itemDate = dayjs(dateValue)
-        if (!itemDate.isValid()) return false
-        const start = dateRange[0].startOf('day')
-        const end = dateRange[1].endOf('day')
-        return (
-          itemDate.isSameOrAfter(start) &&
-          itemDate.isSameOrBefore(end)
-        )
-      })
-    }
-
-    // Status filter from cards
     if (statusFilter === 'totalProjects') {
       filtered = filtered.filter(
         (item) => item.project_number && item.project_number.trim() !== '',
@@ -576,19 +691,18 @@ function Proposals() {
         (item) =>
           item.status === 'Ongoing',
       )
-    }
-    else if (statusFilter === 'proposals') {
+    } else if (statusFilter === 'proposals') {
       filtered = filtered.filter(
         (item) =>
-          !item.project_number && !item.project_number.trim() !== ''
+          !item.project_number || item.project_number.trim() === ''
       )
     }
 
     setFilteredData(filtered)
-  }, [searchText, centerFilter, orderDateRange, statusFilter, projectNumberFilter, tableData, selectedDateField, dateRange])
+  }, [searchText, centreFilter, orderDateRange, statusFilter, projectNumberFilter, tableData, selectedDateField, dateRange])
 
   // Get unique centers for filter
-  const uniqueCenters = useMemo(() => {
+  const uniqueCentres = useMemo(() => {
     const centers = [
       ...new Set(tableData.map((item) => item.center).filter(Boolean)),
     ]
@@ -726,7 +840,7 @@ function Proposals() {
             ) {
               fieldName = 'email_reference'
             }
-            // Center / Centre
+            // Centre / Centre
             else if (hk.includes('center') || hk.includes('centre')) {
               fieldName = 'center'
             }
@@ -948,19 +1062,19 @@ function Proposals() {
         if (overdueDays > 0) {
           return (
             <span style={{ color: '#cf1322', fontWeight: 500 }}>
-              {overdueDays} days overdue
+               {overdueDays} days overdue
             </span>
           )
         } else if (overdueDays < 0) {
           return (
             <span style={{ color: '#389e0d', fontWeight: 500 }}>
-              {Math.abs(overdueDays)} days remaining
+               {Math.abs(overdueDays)} days remaining
             </span>
           )
         } else {
           return (
             <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-              Due Today
+               Due Today
             </span>
           )
         }
@@ -1020,24 +1134,19 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 120,
+        width: 170,
         render: (_, record) => (
           <Space size="small">
             <Button
               size="small"
               type="link"
               icon={<EyeOutlined />}
-              title="View"
-              onClick={(e) => {
-                e.stopPropagation()
-                openDetailModal(record)
-              }}
+              onClick={() => openDetailModal(record)}
             />
             <Button
               size="small"
               type="link"
               icon={<EditOutlined />}
-              title="Edit"
               onClick={() => openEditModal(record)}
             />
             <Popconfirm
@@ -1053,7 +1162,6 @@ function Proposals() {
                 type="link"
                 danger
                 icon={<DeleteOutlined />}
-                title="Delete"
                 loading={deletingId === record.id}
               />
             </Popconfirm>
@@ -1126,6 +1234,38 @@ function Proposals() {
     },
   ]
 
+  // Calculate statistics
+  const statistics = useMemo(() => {
+    const totalProjects = tableData.filter(
+      (item) => item.project_number && item.project_number.trim() !== '',
+    ).length
+
+    const technicallyCompleted = tableData.filter(
+      (item) =>
+        item.technical_completed_year &&
+        item.technical_completed_year.trim() !== '',
+    ).length
+
+    const financiallyCompleted = tableData.filter(
+      (item) =>
+        item.technical_completed_year &&
+        item.technical_completed_year.trim() !== '' &&
+        item.financial_completed_year &&
+        item.financial_completed_year.trim() !== '',
+    ).length
+
+    const pendingProjects = tableData.filter(
+      (item) => item.status === 'Ongoing',
+    ).length
+
+    return {
+      totalProjects,
+      technicallyCompleted,
+      financiallyCompleted,
+      pendingProjects,
+    }
+  }, [tableData])
+
   return (
     <>
       <div className="rounded-3xl bg-white p-6 shadow-sm">
@@ -1141,7 +1281,7 @@ function Proposals() {
                   <div className="grid grid-cols-1 gap-4 md:grid-cols-5">
                     <Card
                       className="bg-gradient-to-br from-blue-500 to-blue-600 text-white shadow-lg hover:shadow-xl transition-shadow cursor-pointer"
-                      onClick={() => setStatusFilter('proposals')}
+                      onClick={()=> setStatusFilter('proposals')}
                     >
                       <Statistic
                         title={
@@ -1167,7 +1307,7 @@ function Proposals() {
                             Total Projects
                           </span>
                         }
-                        value={stats.totalProjects}
+                        value={statistics.totalProjects}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1185,7 +1325,7 @@ function Proposals() {
                             Technically Completed
                           </span>
                         }
-                        value={stats.technicallyCompleted}
+                        value={statistics.technicallyCompleted}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1203,7 +1343,7 @@ function Proposals() {
                             Financially Completed
                           </span>
                         }
-                        value={stats.financiallyCompleted}
+                        value={statistics.financiallyCompleted}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1221,7 +1361,7 @@ function Proposals() {
                             Ongoing Projects
                           </span>
                         }
-                        value={stats.ongoingProjects}
+                        value={statistics.pendingProjects}
                         valueStyle={{
                           color: '#fff',
                           fontSize: '28px',
@@ -1254,7 +1394,7 @@ function Proposals() {
                         <Button
                           onClick={() => {
                             setSearchText('')
-                            setCenterFilter(null)
+                            setCentreFilter(null)
                             setOrderDateRange(null)
                             setStatusFilter(null)
                             setProjectNumberFilter(null)
@@ -1286,13 +1426,13 @@ function Proposals() {
                       <Col xs={24} sm={12} md={6}>
                         <Select
                           placeholder="Filter by Centre"
-                          value={centerFilter}
-                          onChange={setCenterFilter}
+                          value={centreFilter}
+                          onChange={setCentreFilter}
                           size="large"
                           allowClear
                           style={{ width: '100%' }}
                         >
-                          {uniqueCenters.map((center) => (
+                          {uniqueCentres.map((center) => (
                             <Select.Option key={center} value={center}>
                               {center}
                             </Select.Option>
@@ -1426,6 +1566,221 @@ function Proposals() {
                     </Modal>
                   )}
 
+                  <Modal
+                    title="Proposal Details"
+                    open={detailModalOpen}
+                    onCancel={closeDetailModal}
+                    footer={null}
+                    width={1100}
+                    maskClosable
+                    centered
+                    destroyOnClose
+                    styles={{ body: { maxHeight: '70vh', overflowY: 'auto' } }}
+                  >
+                    {!selectedRecord ? (
+                      <div className="text-slate-500">No proposal selected.</div>
+                    ) : (
+                      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+                        <Card
+                          size="small"
+                          className="bg-slate-50"
+                          styles={{ body: { padding: 14 } }}
+                          title={<span className="font-semibold">Overview</span>}
+                        >
+                          <Descriptions
+                            bordered
+                            size="small"
+                            column={{ xs: 1, sm: 2, md: 3 }}
+                            labelStyle={{ width: 170, fontWeight: 600 }}
+                          >
+                            <Descriptions.Item label="Project Number">
+                              {renderDetailValue('project_number', selectedRecord.project_number)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Status">
+                              {renderDetailValue('status', selectedRecord.status)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Activity">
+                              {renderDetailValue('activity', selectedRecord.activity)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Customer Name">
+                              {renderDetailValue('customer_name', selectedRecord.customer_name)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Customer Type">
+                              {renderDetailValue('customer_type', selectedRecord.customer_type)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Order Number">
+                              {renderDetailValue('order_number', selectedRecord.order_number)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Email">
+                              {renderDetailValue('email', selectedRecord.email)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Phone No.">
+                              {renderDetailValue('phone_no', selectedRecord.phone_no)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Alternate Contact">
+                              {renderDetailValue(
+                                'alternate_contact_details',
+                                selectedRecord.alternate_contact_details,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Centre">
+                              {renderDetailValue('center', selectedRecord.center)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Group">
+                              {renderDetailValue('group', selectedRecord.group)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Project Co-ordinator">
+                              {renderDetailValue(
+                                'project_co_ordinator',
+                                selectedRecord.project_co_ordinator,
+                              )}
+                            </Descriptions.Item>
+                          </Descriptions>
+                        </Card>
+
+                        <Card
+                          size="small"
+                          styles={{ body: { padding: 14 } }}
+                          title={<span className="font-semibold">Dates</span>}
+                        >
+                          <Descriptions
+                            bordered
+                            size="small"
+                            column={{ xs: 1, sm: 2, md: 3 }}
+                            labelStyle={{ width: 170, fontWeight: 600 }}
+                          >
+                            <Descriptions.Item label="Enquiry Date">
+                              {renderDetailValue('enquiry_date', selectedRecord.enquiry_date)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Quote Date">
+                              {renderDetailValue('quote_date', selectedRecord.quote_date)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Revised Quote Date">
+                              {renderDetailValue(
+                                'revised_negotiated_quote_date',
+                                selectedRecord.revised_negotiated_quote_date,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Order Date">
+                              {renderDetailValue('order_date', selectedRecord.order_date)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Delivery Date">
+                              {renderDetailValue('delivery_date', selectedRecord.delivery_date)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Extended Delivery">
+                              {renderDetailValue(
+                                'extended_delivery_date',
+                                selectedRecord.extended_delivery_date,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Dispatch Date">
+                              {renderDetailValue('dispatch_date', selectedRecord.dispatch_date)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Technical Completion Year">
+                              {renderDetailValue(
+                                'technical_completed_year',
+                                selectedRecord.technical_completed_year,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Financial Completion Year">
+                              {renderDetailValue(
+                                'financial_completed_year',
+                                selectedRecord.financial_completed_year,
+                              )}
+                            </Descriptions.Item>
+                          </Descriptions>
+                        </Card>
+
+                        <Card
+                          size="small"
+                          styles={{ body: { padding: 14 } }}
+                          title={<span className="font-semibold">Description</span>}
+                        >
+                          <Descriptions
+                            bordered
+                            size="small"
+                            column={1}
+                            labelStyle={{ width: 220, fontWeight: 600 }}
+                          >
+                            <Descriptions.Item label="Address">
+                              {renderDetailValue('address', selectedRecord.address)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Quote Description">
+                              {renderDetailValue('quote_description', selectedRecord.quote_description)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Key Deliverables">
+                              {renderDetailValue('key_deliverables', selectedRecord.key_deliverables)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Review Meeting Details">
+                              {renderDetailValue(
+                                'details_of_external_internal_review_meeting',
+                                selectedRecord.details_of_external_internal_review_meeting,
+                              )}
+                            </Descriptions.Item>
+                          </Descriptions>
+                        </Card>
+
+                        <Card
+                          size="small"
+                          styles={{ body: { padding: 14 } }}
+                          title={<span className="font-semibold">Financials</span>}
+                        >
+                          <Descriptions
+                            bordered
+                            size="small"
+                            column={{ xs: 1, sm: 2, md: 3 }}
+                            labelStyle={{ width: 170, fontWeight: 600 }}
+                          >
+                            <Descriptions.Item label="Quote Amount">
+                              {renderDetailValue('quote_amount', selectedRecord.quote_amount)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Revised Quote Amount">
+                              {renderDetailValue(
+                                'revised_negotiated_quote_amount',
+                                selectedRecord.revised_negotiated_quote_amount,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Order Value">
+                              {renderDetailValue('order_value', selectedRecord.order_value)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="PPM Remarks">
+                              {renderDetailValue('ppm_remarks', selectedRecord.ppm_remarks)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Updated By">
+                              {renderDetailValue('updated_by', selectedRecord.updated_by)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Updated At">
+                              {renderDetailValue('updated_at', selectedRecord.updated_at)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                        </Card>
+
+                        <Card
+                          size="small"
+                          styles={{ body: { padding: 14 } }}
+                          title={<span className="font-semibold">Closure</span>}
+                        >
+                          <Descriptions
+                            bordered
+                            size="small"
+                            column={1}
+                            labelStyle={{ width: 220, fontWeight: 600 }}
+                          >
+                            <Descriptions.Item label="Co-ordinator Remarks">
+                              {renderDetailValue(
+                                'co_ordinator_remarks',
+                                selectedRecord.co_ordinator_remarks,
+                              )}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="Closure Report">
+                              {renderDetailValue('closer_report', selectedRecord.closer_report)}
+                            </Descriptions.Item>
+                          </Descriptions>
+                        </Card>
+                      </Space>
+                    )}
+                  </Modal>
+
                   {/* Proposals Table */}
                   <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
                     <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
@@ -1434,7 +1789,7 @@ function Proposals() {
                           Proposal / Projects
                         </Title>
                         <p className="text-slate-500 text-sm">
-                          Showing {filteredData.length} of
+                          Showing {filteredData.length} of 
                           Proposals / Projects
                         </p>
                       </div>
@@ -1457,221 +1812,6 @@ function Proposals() {
           ]}
         />
       </div>
-
-      {/* Detail View Modal */}
-      <Modal
-        title="Proposal Details"
-        open={detailModalOpen}
-        onCancel={closeDetailModal}
-        width={1000}
-        footer={null}
-        maskClosable={false}
-      >
-        {selectedRecord && (
-          <div className="space-y-6">
-            {/* Customer Information */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-lg font-semibold mb-3 text-gray-700">Customer Information</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Enquiry Date</div>
-                  <div className="font-medium">{formatDate(selectedRecord.enquiry_date) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Customer Type</div>
-                  <div className="font-medium">{selectedRecord.customer_type || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Customer Name</div>
-                  <div className="font-medium">{selectedRecord.customer_name || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Address</div>
-                  <div className="font-medium">{selectedRecord.address || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Email</div>
-                  <div className="font-medium">{selectedRecord.email || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Phone No</div>
-                  <div className="font-medium">{selectedRecord.phone_no || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Alternate Contact</div>
-                  <div className="font-medium">{selectedRecord.alternate_contact_details || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Request Type</div>
-                  <div className="font-medium">{selectedRecord.request_type || '-'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Quotation Information */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-lg font-semibold mb-3 text-gray-700">Quotation Information</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Quote Reference</div>
-                  <div className="font-medium">{selectedRecord.quote_reference || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Quote Date</div>
-                  <div className="font-medium">{formatDate(selectedRecord.quote_date) || '-'}</div>
-                </div>
-                <div className="border-b pb-2 md:col-span-2">
-                  <div className="text-sm text-gray-500">Quote Description</div>
-                  <div className="font-medium">{selectedRecord.quote_description || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Quote Amount</div>
-                  <div className="font-medium">{formatIndianNumber(selectedRecord.quote_amount) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Revised / Negotiated</div>
-                  <div className="font-medium">{selectedRecord.revised_negotiated || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Revised Quote Date</div>
-                  <div className="font-medium">{formatDate(selectedRecord.revised_negotiated_quote_date) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Revised Quote Amount</div>
-                  <div className="font-medium">{formatIndianNumber(selectedRecord.revised_negotiated_quote_amount) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Quotation Given By (Name)</div>
-                  <div className="font-medium">{selectedRecord.quotation_given_by_name || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Quotation Given By (Department)</div>
-                  <div className="font-medium">{selectedRecord.quotation_given_by_department || '-'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Project Information */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-lg font-semibold mb-3 text-gray-700">Project Information</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Project Number</div>
-                  <div className="font-medium">{selectedRecord.project_number || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Party Name</div>
-                  <div className="font-medium">{selectedRecord.party_name || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Activity</div>
-                  <div className="font-medium">{selectedRecord.activity || '-'}</div>
-                </div>
-                <div className="border-b pb-2 md:col-span-2">
-                  <div className="text-sm text-gray-500">Key Deliverables</div>
-                  <div className="font-medium">{selectedRecord.key_deliverables || '-'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Order Information */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-lg font-semibold mb-3 text-gray-700">Order Information</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Order Number</div>
-                  <div className="font-medium">{selectedRecord.order_number || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Order Date</div>
-                  <div className="font-medium">{formatDate(selectedRecord.order_date) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Delivery Date</div>
-                  <div className="font-medium">{formatDate(selectedRecord.delivery_date) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Extended Delivery Date</div>
-                  <div className="font-medium">{formatDate(selectedRecord.extended_delivery_date) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Date of Actual Commencement</div>
-                  <div className="font-medium">{formatDate(selectedRecord.date_of_actual_commencement) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Order Value</div>
-                  <div className="font-medium">{formatIndianNumber(selectedRecord.order_value) || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Dispatch Date</div>
-                  <div className="font-medium">{formatDate(selectedRecord.dispatch_date) || '-'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Organization Information */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-lg font-semibold mb-3 text-gray-700">Organization Information</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Project Coordinator</div>
-                  <div className="font-medium">{selectedRecord.project_co_ordinator || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Centre</div>
-                  <div className="font-medium">{selectedRecord.center || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Group</div>
-                  <div className="font-medium">{selectedRecord.group || '-'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Remarks & Reports */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-lg font-semibold mb-3 text-gray-700">Remarks & Reports</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-b pb-2 md:col-span-2">
-                  <div className="text-sm text-gray-500">Co-ordinator Remarks</div>
-                  <div className="font-medium">{selectedRecord.co_ordinator_remarks || '-'}</div>
-                </div>
-                <div className="border-b pb-2 md:col-span-2">
-                  <div className="text-sm text-gray-500">Closure Report</div>
-                  <div className="font-medium">{selectedRecord.closer_report || '-'}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Completion Status */}
-            <div className="border rounded-lg p-4 bg-gray-50">
-              <h3 className="text-lg font-semibold mb-3 text-gray-700">Completion Status</h3>
-              <div className="grid gap-4 md:grid-cols-2">
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Technical Completed Year</div>
-                  <div className="font-medium">{selectedRecord.technical_completed_year || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Financial Completed Year</div>
-                  <div className="font-medium">{selectedRecord.financial_completed_year || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Status</div>
-                  <div className="font-medium">{selectedRecord.status || '-'}</div>
-                </div>
-                <div className="border-b pb-2">
-                  <div className="text-sm text-gray-500">Updated By</div>
-                  <div className="font-medium">{selectedRecord.updated_by || '-'}</div>
-                </div>
-                <div className="border-b pb-2 md:col-span-2">
-                  <div className="text-sm text-gray-500">PPM Remarks</div>
-                  <div className="font-medium">{selectedRecord.ppm_remarks || '-'}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </Modal>
 
       <Modal
         title={editingRecord ? 'Edit Proposal' : 'Add Proposal'}
@@ -1714,11 +1854,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                          {
-                            required: true,
-                            message: `Please enter ${field.label}`,
-                          },
-                        ]
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1747,6 +1887,134 @@ function Proposals() {
 
               const InputComponent = field.input === 'textarea' ? TextArea : Input
               const isUpdatedByField = field.name === 'updated_by'
+              const isCustomerName = field.name === 'customer_name'
+              const isAddressField = field.name === 'address'
+              const isEmailField = field.name === 'email'
+              const isPhoneField = field.name === 'phone_no'
+
+              if (isCustomerName) {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                  >
+                    <AutoComplete
+                      options={customerOptions}
+                      onSearch={searchCustomers}
+                      onSelect={handleCustomerSelect}
+                      placeholder="Search existing customers..."
+                      style={{ width: '100%' }}
+                      allowClear
+                    >
+                      <Input />
+                    </AutoComplete>
+                  </Form.Item>
+                )
+              }
+
+              if (isAddressField) {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                  >
+                    <AutoComplete
+                      options={addressOptions}
+                      onSearch={searchAddresses}
+                      placeholder="Type or select address..."
+                      style={{ width: '100%' }}
+                      allowClear
+                      onSelect={(value) => form.setFieldsValue({ address: value })}
+                    >
+                      <Input />
+                    </AutoComplete>
+                  </Form.Item>
+                )
+              }
+
+              if (isEmailField) {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                  >
+                    <AutoComplete
+                      options={emailOptions}
+                      onSearch={searchEmails}
+                      placeholder="Type or select email..."
+                      style={{ width: '100%' }}
+                      allowClear
+                      onSelect={(value) => form.setFieldsValue({ email: value })}
+                    >
+                      <Input />
+                    </AutoComplete>
+                  </Form.Item>
+                )
+              }
+
+              if (isPhoneField) {
+                return (
+                  <Form.Item
+                    key={field.name}
+                    name={field.name}
+                    label={field.label}
+                    rules={
+                      field.required
+                        ? [
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
+                        : []
+                    }
+                  >
+                    <AutoComplete
+                      options={phoneOptions}
+                      onSearch={searchPhones}
+                      placeholder="Type or select phone..."
+                      style={{ width: '100%' }}
+                      allowClear
+                      onSelect={(value) => form.setFieldsValue({ phone_no: value })}
+                    >
+                      <Input />
+                    </AutoComplete>
+                  </Form.Item>
+                )
+              }
 
               if (field.name === 'customer_type') {
                 return (
@@ -1757,11 +2025,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                          {
-                            required: true,
-                            message: `Please enter ${field.label}`,
-                          },
-                        ]
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1799,11 +2067,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                          {
-                            required: true,
-                            message: `Please enter ${field.label}`,
-                          },
-                        ]
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1841,11 +2109,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                          {
-                            required: true,
-                            message: `Please enter ${field.label}`,
-                          },
-                        ]
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1883,11 +2151,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                          {
-                            required: true,
-                            message: `Please enter ${field.label}`,
-                          },
-                        ]
+                            {
+                              required: true,
+                              message: `Please enter ${field.label}`,
+                            },
+                          ]
                         : []
                     }
                     getValueProps={(value) => ({
@@ -1935,11 +2203,11 @@ function Proposals() {
                     rules={
                       field.required
                         ? [
-                          {
-                            required: true,
-                            message: `Please select ${field.label}`,
-                          },
-                        ]
+                            {
+                              required: true,
+                              message: `Please select ${field.label}`,
+                            },
+                          ]
                         : []
                     }
                   >
@@ -1982,11 +2250,11 @@ function Proposals() {
                   rules={
                     field.required
                       ? [
-                        {
-                          required: true,
-                          message: `Please enter ${field.label}`,
-                        },
-                      ]
+                          {
+                            required: true,
+                            message: `Please enter ${field.label}`,
+                          },
+                        ]
                       : []
                   }
                 >

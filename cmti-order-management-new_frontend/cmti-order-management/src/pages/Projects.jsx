@@ -916,6 +916,13 @@ function Projects() {
           <div className="space-y-8">
             {stageData
               .filter(stage => (stage.stage_name || '').trim().toLowerCase() !== 'dgdfh')
+              .sort((a, b) => {
+                const configA = stageConfig.find((s) => s.id === a.stage_id)
+                const configB = stageConfig.find((s) => s.id === b.stage_id)
+                const posA = configA?.position ?? a.position ?? Infinity
+                const posB = configB?.position ?? b.position ?? Infinity
+                return posA - posB
+              })
               .map((stage) => {
                 const rawName = (stage.stage_name || '').trim()
                 const stageName = rawName
@@ -1387,7 +1394,7 @@ function Projects() {
         />
 
         <Select
-          placeholder="Filter by center"
+          placeholder="Filter by centre"
           allowClear
           size="large"
           style={{ width: 240 }}
@@ -1434,7 +1441,7 @@ function Projects() {
                     <div><Text type="secondary">Activity:</Text> <Text>{formatValue(project.activity)}</Text></div>
                     <div><Text type="secondary">Coordinator:</Text> <Text>{formatValue(project.project_co_ordinator)}</Text></div>
                     {project.center && (
-                      <div><Text type="secondary">Center:</Text> <Text>{formatValue(project.center)}</Text></div>
+                      <div><Text type="secondary">Centre:</Text> <Text>{formatValue(project.center)}</Text></div>
                     )}
                     <Button type="primary" icon={<EyeOutlined />} onClick={() => handleViewProject(project)}>
                       View Details

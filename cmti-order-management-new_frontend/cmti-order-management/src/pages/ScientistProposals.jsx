@@ -60,7 +60,7 @@ const REQUEST_TYPE_OPTIONS = [
   'EOI',
 ]
 
-// Restricted columns for Scientist (operational view - no quotation, no payment, no metadata)
+// Full columns for Scientist (show all like GH)
 const TABLE_FIELDS = [
   { name: 'id', label: 'SL NO', width: 80, fixed: 'left', render: (text, record, index) => index + 1 },
   { name: 'project_number', label: 'Project Number', width: 140 },
@@ -79,7 +79,6 @@ const TABLE_FIELDS = [
   { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
   { name: 'closer_report', label: 'Closure Report', width: 180, input: 'textarea' },
-  { name: 'updated_by', label: 'Updated By', width: 150 },
 ]
 
 // All fields for data mapping (internal use)
@@ -723,25 +722,16 @@ function ScientistProposals() {
         fixed: 'right',
         width: 100,
         render: (_, record) => (
-          <Space size="small">
-            <Button
-              size="small"
-              type="link"
-              icon={<EyeOutlined />}
-              title="View"
-              onClick={(e) => {
-                e.stopPropagation()
-                openDetailModal(record)
-              }}
-            />
-            <Button
-              size="small"
-              type="link"
-              icon={<EditOutlined />}
-              title="Edit"
-              onClick={() => openEditModal(record)}
-            />
-          </Space>
+          <Button
+            size="small"
+            type="link"
+            onClick={(e) => {
+              e.stopPropagation()
+              openDetailModal(record)
+            }}
+          >
+            More
+          </Button>
         ),
       },
     ]

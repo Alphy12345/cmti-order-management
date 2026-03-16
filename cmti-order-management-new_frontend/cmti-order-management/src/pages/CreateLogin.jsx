@@ -114,10 +114,10 @@ function CreateLogin() {
 
           <Form.Item
             name="center"
-            label="Center"
-            rules={[{ required: true, message: 'Please enter center' }]}
+            label="Centre"
+            rules={[{ required: true, message: 'Please enter centre' }]}
           >
-            <Input placeholder="Enter center" />
+            <Input placeholder="Enter centre" />
           </Form.Item>
 
           <Form.Item

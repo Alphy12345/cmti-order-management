@@ -40,9 +40,9 @@ const { Title } = Typography
 const { TextArea } = Input
 const { RangePicker } = DatePicker
 
-// Restricted columns for CH (operational view - no quotation, no payment, no metadata)
+// Full columns for CH (show all like GH)
 const TABLE_FIELDS = [
-  { name: 'id', label: 'SL NO', width: 80, fixed: 'left' },
+  { name: 'id', label: 'SL NO', width: 80, fixed: 'left', render: (text, record, index) => index + 1 },
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'customer_name', label: 'Customer Name', width: 180 },
   { name: 'order_date', label: 'Order Date', width: 130 },
@@ -50,15 +50,15 @@ const TABLE_FIELDS = [
   { name: 'extended_delivery_date', label: 'Extended Delivery', width: 150 },
   { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 170 },
   { name: 'dispatch_date', label: 'Dispatch Date', width: 130 },
-  { name: 'key_deliverables', label: 'Key Deliverables', width: 220 },
+  { name: 'key_deliverables', label: 'Key Deliverables', width: 220, input: 'textarea' },
   { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 180 },
   { name: 'center', label: 'Centre', width: 120 },
   { name: 'group', label: 'Group', width: 120 },
-  { name: 'status', label: 'Status', width: 130 },
+  { name: 'status', label: 'Status', width: 130, input: 'select' },
   { name: 'technical_completed_year', label: 'Technical Completion', width: 160 },
   { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
-  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220 },
-  { name: 'closer_report', label: 'Closure Report', width: 180 },
+  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
+  { name: 'closer_report', label: 'Closure Report', width: 180, input: 'textarea' },
 ]
 
 // All fields for data mapping (internal use)
@@ -93,10 +93,10 @@ const ALL_FIELDS = [
   { name: 'date_of_actual_commencement', label: 'Actual Commencement', width: 210 },
   { name: 'order_value', label: 'Order Value', width: 170 },
   { name: 'details_of_external_internal_review_meeting', label: 'Review Meeting Details', width: 260 },
-  { name: 'project_co_ordinator', label: 'Project Co-ordinator', width: 200 },
+  { name: 'project_coordinator', label: 'Project Coordinator', width: 200 },
   { name: 'center', label: 'Centre', width: 150 },
-  { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220 },
-  { name: 'closer_report', label: 'Closure Report', width: 200 },
+  { name: 'coordinator_remarks', label: 'Coordinator Remarks', width: 220 },
+  { name: 'closure_report', label: 'Closure Report', width: 200, input: 'textarea' },
   { name: 'technical_completed_year', label: 'Technical Completion Year', width: 220 },
   { name: 'financial_completed_year', label: 'Financial Completion Year', width: 220 },
   { name: 'status', label: 'Status', width: 150 },
@@ -275,7 +275,21 @@ function Proposals() {
 
       const payload = await response.json()
       setStats(payload)
-      setProposalCount(payload.totalProposals)
+
+      try {
+        const countResponse = await fetch(`${API_BASE_URL}/proposals/count/by-centre/${encodedCenter}`, {
+          headers: { accept: 'application/json' },
+        })
+        if (countResponse.ok) {
+          const countPayload = await countResponse.json()
+          setProposalCount(countPayload?.count ?? 0)
+        } else {
+          setProposalCount(0)
+        }
+      } catch (countError) {
+        console.error(countError)
+        setProposalCount(0)
+      }
     } catch (error) {
       console.error(error)
     }
@@ -725,25 +739,16 @@ function Proposals() {
         fixed: 'right',
         width: 100,
         render: (_, record) => (
-          <Space size="small">
-            <Button
-              size="small"
-              type="link"
-              icon={<EyeOutlined />}
-              title="View"
-              onClick={(e) => {
-                e.stopPropagation()
-                openDetailModal(record)
-              }}
-            />
-            <Button
-              size="small"
-              type="link"
-              icon={<EditOutlined />}
-              title="Edit"
-              onClick={() => openEditModal(record)}
-            />
-          </Space>
+          <Button
+            size="small"
+            type="link"
+            onClick={(e) => {
+              e.stopPropagation()
+              openDetailModal(record)
+            }}
+          >
+            More
+          </Button>
         ),
       },
     ]

@@ -5,6 +5,8 @@ import {
   DownloadOutlined,
   FilterOutlined,
   EditOutlined,
+  InboxOutlined,
+  UploadOutlined,
   EyeOutlined,
 } from '@ant-design/icons'
 import {
@@ -25,6 +27,7 @@ import {
   Col,
   Statistic,
   AutoComplete,
+  Upload,
 } from 'antd'
 import * as XLSX from 'xlsx'
 import dayjs from 'dayjs'
@@ -40,6 +43,7 @@ dayjs.extend(isSameOrBefore)
 const { Title } = Typography
 const { TextArea } = Input
 const { RangePicker } = DatePicker
+const { Dragger } = Upload
 
 const CUSTOMER_TYPE_OPTIONS = [
   'Govt',
@@ -85,7 +89,7 @@ const PROPOSAL_FIELDS = [
   { name: 'revised_negotiated_quote_date', label: 'Revised Quote Date', width: 190, apiName: 'revised/negotiated_quote_date' },
   { name: 'revised_negotiated_quote_amount', label: 'Revised Quote Amount', width: 210, apiName: 'revised/negotiated_quote_amount' },
   { name: 'quotation_given_by_department', label: 'Department', width: 180 },
-  { name: 'quotation_given_by_name', label: 'Quotation Given By', width: 200 },
+  { name: 'quotation_given_by_name', label: 'Propsal Given By', width: 200 },
   { name: 'project_number', label: 'Project Number', width: 140 },
   { name: 'party_name', label: 'Party Name', width: 200 },
   { name: 'activity', label: 'Activity', width: 160 },
@@ -123,13 +127,14 @@ const COORDINATOR_ADD_FIELDS = [
   'alternate_contact_details',
   'request_type',
   'email_reference',
-  'quote_reference',
-  'quote_description',
-  'quote_date',
-  'quote_amount',
-  'revised_negotiated',
-  'revised_negotiated_quote_date',
-  'revised_negotiated_quote_amount',
+  //mychanges
+  // 'quote_reference',
+  // 'quote_description',
+  // 'quote_date',
+  // 'quote_amount',
+  // 'revised_negotiated',
+  // 'revised_negotiated_quote_date',
+  // 'revised_negotiated_quote_amount',
   'quotation_given_by_name',
   'quotation_given_by_department',
   'center',
@@ -155,7 +160,6 @@ const TABLE_FIELDS = [
   { name: 'financial_completed_year', label: 'Financial Completion', width: 160 },
   { name: 'co_ordinator_remarks', label: 'Co-ordinator Remarks', width: 220, input: 'textarea' },
   { name: 'closer_report', label: 'Closure Report', width: 180, input: 'textarea' },
-  { name: 'updated_by', label: 'Updated By', width: 150 },
 ]
 
 // All fields for data mapping (internal use)
@@ -234,6 +238,28 @@ const mapUiToApi = (values) => {
   return payload
 }
 
+const getDocumentVersionNumber = (name, baseName) => {
+  const n = (name || '').toString().trim()
+  const b = (baseName || '').toString().trim()
+  if (!n || !b) return null
+  const lower = n.toLowerCase()
+  const baseLower = b.toLowerCase()
+  if (!lower.startsWith(baseLower)) return null
+  const match = lower.match(/\bv\s*(\d+)\b/)
+  if (!match) return null
+  const num = Number(match[1])
+  return Number.isFinite(num) ? num : null
+}
+
+const getNextDocumentVersion = (docs, baseName) => {
+  const list = Array.isArray(docs) ? docs : []
+  const versions = list
+    .map((d) => getDocumentVersionNumber(d?.name, baseName))
+    .filter((v) => typeof v === 'number' && Number.isFinite(v))
+  const max = versions.length ? Math.max(...versions) : 0
+  return max + 1
+}
+
 function Proposals() {
   const [form] = Form.useForm() // For existing edit modal (if any)
   const [coordinatorForm] = Form.useForm() // For new Add Proposal modal
@@ -251,25 +277,38 @@ function Proposals() {
   const [editingRecord, setEditingRecord] = useState(null)
 
   const [searchText, setSearchText] = useState('')
-  const [centerFilter, setCenterFilter] = useState(null)
+  const [centerFilter, setCentreFilter] = useState(null)
   const [orderDateRange, setOrderDateRange] = useState(null)
   const [enquiryDateRange, setEnquiryDateRange] = useState(null)
   const [statusFilter, setStatusFilter] = useState(null)
   const [projectCodePrefix, setProjectCodePrefix] = useState('')
   const [currentUserName, setCurrentUserName] = useState('')
-  const [currentUserCenter, setCurrentUserCenter] = useState('')
+  const [currentUserCentre, setCurrentUserCentre] = useState('')
   const [currentUserGroup, setCurrentUserGroup] = useState('')
   const [proposalCount, setProposalCount] = useState(0)
-  const [stats, setStats] = useState({
-    totalProposals: 0,
-    totalProjects: 0,
-    technicallyCompleted: 0,
-    financiallyCompleted: 0,
-    ongoingProjects: 0
-  })
   const [customerOptions, setCustomerOptions] = useState([])
+  const [allCustomerSuggestions, setAllCustomerSuggestions] = useState([])
+  const [addressOptions, setAddressOptions] = useState([])
+  const [emailOptions, setEmailOptions] = useState([])
+  const [phoneOptions, setPhoneOptions] = useState([])
   const [customerSearchLoading, setCustomerSearchLoading] = useState(false)
-  const [userRole, setUserRole] = useState('')
+
+  // Upload documents immediately after proposal creation (needs project_id)
+  const [stageConfig, setStageConfig] = useState([])
+  const [createdProjectId, setCreatedProjectId] = useState(null)
+  const [createdProjectStages, setCreatedProjectStages] = useState([])
+  const [uploadModalVisible, setUploadModalVisible] = useState(false)
+  const [uploadStageId, setUploadStageId] = useState(1) // default Enquiry
+  const [selectedStageForUpload, setSelectedStageForUpload] = useState(null)
+  const [fileToUpload, setFileToUpload] = useState(null)
+  const [uploading, setUploading] = useState(false)
+  const [documentName, setDocumentName] = useState('Enquiry v1')
+  const [description, setDescription] = useState('')
+  const [uploadedBy, setUploadedBy] = useState('')
+  const [docsModalVisible, setDocsModalVisible] = useState(false)
+  const [projectDocs, setProjectDocs] = useState([])
+  const [docsLoading, setDocsLoading] = useState(false)
+  const [viewDocumentUrl, setViewDocumentUrl] = useState(null)
 
   const openDetailModal = useCallback((record) => {
     setSelectedRecord(record)
@@ -301,6 +340,51 @@ function Proposals() {
     form.resetFields()
   }, [form])
 
+  const handleCloseUploadModal = () => {
+    setUploadModalVisible(false)
+    setFileToUpload(null)
+  }
+
+  const handleUpload = async () => {
+    if (!fileToUpload) return message.error('Please select a file')
+    const uploader = (uploadedBy || currentUserName || '').trim()
+    if (!uploader) return message.error('Your name is required')
+    if (!createdProjectId) return message.error('Project ID not available. Please create a proposal first.')
+
+    setUploading(true)
+    const formData = new FormData()
+    formData.append('name', documentName.trim())
+    formData.append('description', description.trim())
+    formData.append('project_id', createdProjectId)
+    formData.append('stage_id', selectedStageForUpload?.stage_id || uploadStageId)
+    formData.append('uploaded_by', uploader)
+    formData.append('file', fileToUpload)
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/documents/`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        const err = await res.text().catch(() => 'Upload failed')
+        throw new Error(err || 'Upload failed')
+      }
+      message.success('Document uploaded!')
+
+      // Update uploaded docs list; set next default version label
+      setFileToUpload(null)
+      const baseName = (selectedStageForUpload?.stage_name || 'Enquiry').toString().trim() || 'Enquiry'
+      const docs = await fetchProjectDocuments(createdProjectId)
+      const nextVersion = (Array.isArray(docs) ? docs.length : 0) + 1
+      setDocumentName(`${baseName} v${nextVersion}`)
+    } catch (err) {
+      console.error('Upload error:', err)
+      message.error(err.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   const handleSubmit = async (values) => {
     if (!editingRecord?.id) {
       message.error('No record selected for editing')
@@ -308,7 +392,7 @@ function Proposals() {
     }
 
     setSubmitLoading(true)
-
+    
     // Build payload for coordinator-update endpoint (only allowed fields)
     const payload = {
       project_id: editingRecord.id,
@@ -357,7 +441,7 @@ function Proposals() {
           if (parsedUser && parsedUser.name) {
             coordinatorName = parsedUser.name
             setCurrentUserName(parsedUser.name)
-            setCurrentUserCenter(parsedUser.center || '')
+            setCurrentUserCentre(parsedUser.center || '')
             setCurrentUserGroup(parsedUser.group || '')
             const encodedName = encodeURIComponent(parsedUser.name)
             url = `${API_BASE_URL}/proposals/by-name/${encodedName}`
@@ -384,56 +468,125 @@ function Proposals() {
     }
   }, [])
 
-  const fetchStats = useCallback(async () => {
-    let group = ''
+  const fetchProposalsCount = async () => {
     try {
+      let count = 0
       const rawUser = window.localStorage.getItem('ppm_user')
       if (rawUser) {
         const parsedUser = JSON.parse(rawUser)
-        group = parsedUser?.group || ''
+        const group = (parsedUser?.group || '').toString().trim()
+        if (group) {
+          const encodedGroup = encodeURIComponent(group)
+          const url = `${API_BASE_URL}/proposals/count/by-group/${encodedGroup}`
+          const response = await fetch(url, { headers: { accept: 'application/json' } })
+          if (response.ok) {
+            const payload = await response.json()
+            count = payload?.count ?? 0
+          }
+        }
       }
-    } catch (err) {
-      console.error('Failed to parse ppm_user from localStorage', err)
-    }
-
-    if (!group) {
-      return
-    }
-
-    try {
-      const encodedGroup = encodeURIComponent(group)
-      const response = await fetch(`${API_BASE_URL}/proposals/stats/by-group/${encodedGroup}`, {
-        headers: { accept: 'application/json' },
-      })
-
-      if (!response.ok) {
-        throw new Error('Unable to fetch proposal stats')
-      }
-
-      const payload = await response.json()
-      setStats(payload)
-      setProposalCount(payload.totalProposals)
+      setProposalCount(count)
     } catch (error) {
       console.error(error)
     }
-  }, [])
+  }
 
-  useEffect(() => {
+  const fetchStageConfig = async () => {
     try {
-      const rawUser = window.localStorage.getItem('ppm_user')
-      if (rawUser) {
-        const parsedUser = JSON.parse(rawUser)
-        if (parsedUser && parsedUser.name) {
-          setCurrentUserName(parsedUser.name)
-          setCurrentUserCenter(parsedUser.center || '')
-          setCurrentUserGroup(parsedUser.group || '')
-          setUserRole(parsedUser.role?.toLowerCase() || '')
-        }
+      const res = await fetch(`${API_BASE_URL}/stages/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch stage configuration')
       }
+      const data = await res.json()
+      const normalized = Array.isArray(data)
+        ? data.map((item) => ({ ...item, key: item.id }))
+        : []
+      setStageConfig(normalized)
+      return normalized
     } catch (error) {
-      console.error('Failed to read user from localStorage', error)
+      console.error('Error fetching stage configuration:', error)
+      return []
+    }
+  }
+
+  const openUploadModalForNewProposal = (projectId) => {
+    const stages = Array.isArray(stageConfig) ? stageConfig : []
+    const enquiryStage = stages.find((s) => (s.name || '').toString().trim().toLowerCase() === 'enquiry')
+    const stage = enquiryStage || stages[0] || { id: uploadStageId, name: 'Enquiry' }
+
+    setSelectedStageForUpload({ stage_id: stage.id, stage_name: stage.name || 'Enquiry' })
+    setUploadStageId(stage.id)
+
+    const baseName = (stage.name || 'Enquiry').toString().trim() || 'Enquiry'
+    setDocumentName(`${baseName} v1`)
+    setUploadedBy(currentUserName || '')
+    setDescription('')
+
+    setCreatedProjectId(projectId)
+    setUploadModalVisible(true)
+  }
+
+  const fetchProjectDocuments = async (projectId) => {
+    setDocsLoading(true)
+    try {
+      const res = await fetch(`${API_BASE_URL}/documents/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!res.ok) {
+        throw new Error('Failed to fetch documents')
+      }
+      const data = await res.json()
+      const docs = Array.isArray(data) ? data : []
+
+      const enquiryStage = (Array.isArray(stageConfig) ? stageConfig : []).find(
+        (s) => (s.name || '').toString().trim().toLowerCase() === 'enquiry',
+      )
+      const enquiryStageId = enquiryStage?.id
+
+      const filtered = docs
+        .filter((d) => d.project_id === projectId)
+        .filter((d) => (enquiryStageId ? d.stage_id === enquiryStageId : true))
+
+      const baseName = (enquiryStage?.name || 'Enquiry').toString().trim() || 'Enquiry'
+
+      // Sort by uploaded time (oldest first) and assign sequential version numbers
+      const sortedByDate = [...filtered].sort(
+        (a, b) => new Date(a.created_at) - new Date(b.created_at),
+      )
+
+      const withVersions = sortedByDate.map((d, idx) => ({
+        ...d,
+        version: idx + 1,
+        display_name: d.name || `${baseName} v${idx + 1}`,
+      }))
+
+      setProjectDocs(withVersions)
+      return withVersions
+    } catch (err) {
+      console.error('Error fetching project documents:', err)
+      message.error(err.message || 'Unable to load documents')
+      setProjectDocs([])
+    } finally {
+      setDocsLoading(false)
+    }
+  }
+
+  const openDocsModal = async (projectId) => {
+    setDocsModalVisible(true)
+    await fetchProjectDocuments(projectId)
+  }
+
+  const viewDocument = (doc) => {
+    if (!doc?.url) {
+      return message.error('Document URL is not available')
     }
 
+    setViewDocumentUrl(doc.url)
+  }
+
+  useEffect(() => {
     // Trigger delivery notification check on every page load
     fetch(`${API_BASE_URL}/proposals/check-delivery-notifications`, {
       method: 'POST',
@@ -441,19 +594,24 @@ function Proposals() {
     }).catch(err => console.log('Notification check error:', err))
 
     fetchProposals()
-    fetchStats()
+    fetchProposalsCount()
+    fetchStageConfig()
   }, [fetchProposals])
 
   // Open/Close Coordinator Add Modal
   const openCoordinatorAddModal = () => {
     coordinatorForm.resetFields()
+    setCustomerOptions([])
+    setAddressOptions([])
+    setEmailOptions([])
+    setPhoneOptions([])
 
     // Auto-fill read-only fields including group and center
     if (currentUserName) {
       coordinatorForm.setFieldsValue({
         quotation_given_by_name: currentUserName,
-        quotation_given_by_department: currentUserCenter ? currentUserCenter.toUpperCase() : '',
-        center: currentUserCenter || '',
+        quotation_given_by_department: currentUserCentre ? currentUserCentre.toUpperCase() : '',
+        center: currentUserCentre || '',
         group: currentUserGroup || '',
       })
     }
@@ -465,9 +623,38 @@ function Proposals() {
     setCoordinatorModalOpen(false)
     coordinatorForm.resetFields()
     setCustomerOptions([])
+    setAddressOptions([])
+    setEmailOptions([])
+    setPhoneOptions([])
   }
 
-  // Search customers by name
+  const fetchCustomerSuggestions = useCallback(async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/customers/`, {
+        headers: { accept: 'application/json' },
+      })
+      if (!response.ok) {
+        throw new Error('Unable to fetch customer suggestions')
+      }
+      const payload = await response.json()
+      const normalized = Array.isArray(payload) ? payload.map(customer => ({
+        name: customer.name,
+        customer_type: customer.customer_type,
+        address: null,
+        email: customer.email,
+        phone_no: customer.phone_no,
+        alternate_contact_details: customer.alternate_contact_details,
+        addresses: customer.address ? [customer.address] : []
+      })).filter(c => c.name && c.name.trim()) : []
+      setAllCustomerSuggestions(normalized)
+      return normalized
+    } catch (error) {
+      console.error('Customer suggestions fetch error:', error)
+      setAllCustomerSuggestions([])
+      return []
+    }
+  }, [])
+
   const searchCustomers = useCallback(async (searchValue) => {
     if (!searchValue || searchValue.trim().length < 2) {
       setCustomerOptions([])
@@ -476,41 +663,134 @@ function Proposals() {
 
     setCustomerSearchLoading(true)
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/customers/search?name=${encodeURIComponent(searchValue.trim())}`,
-        { headers: { accept: 'application/json' } }
-      )
+      const normalized = searchValue.trim().toLowerCase()
 
-      if (!response.ok) throw new Error('Failed to search customers')
+      // Ensure we have the full list fetched
+      let customerList = allCustomerSuggestions
+      if (!customerList.length) {
+        customerList = await fetchCustomerSuggestions()
+      }
 
-      const customers = await response.json()
-      const options = customers.map((customer) => ({
+      const matches = (customerList || [])
+        .filter((c) => c?.name?.toLowerCase().includes(normalized))
+        .slice(0, 20)
+
+      const options = matches.map((customer) => ({
         value: customer.name,
         label: `${customer.name} ${customer.customer_type ? `(${customer.customer_type})` : ''}`,
-        customer: customer,
+        customer,
       }))
       setCustomerOptions(options)
-    } catch (error) {
-      console.error('Customer search error:', error)
-      setCustomerOptions([])
     } finally {
       setCustomerSearchLoading(false)
     }
-  }, [])
+  }, [allCustomerSuggestions, fetchCustomerSuggestions])
 
-  // Handle customer selection - auto-fill related fields
+  const searchAddresses = useCallback(
+    async (searchValue) => {
+      if (!searchValue || !searchValue.trim()) {
+        setAddressOptions([])
+        return
+      }
+
+      const currentName = coordinatorForm.getFieldValue('customer_name')?.trim()
+      if (!currentName) {
+        setAddressOptions([])
+        return
+      }
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/customers/addresses?name=${encodeURIComponent(currentName)}`,
+          { headers: { accept: 'application/json' } },
+        )
+        if (!response.ok) throw new Error('Unable to fetch addresses')
+        const payload = await response.json()
+        const addresses = Array.isArray(payload) ? payload : []
+        const normalized = searchValue.trim().toLowerCase()
+        const matches = addresses
+          .filter((a) => a?.toLowerCase().includes(normalized))
+          .slice(0, 20)
+        setAddressOptions(matches.map((a) => ({ value: a, label: a })))
+      } catch (error) {
+        console.error('Address search error:', error)
+        setAddressOptions([])
+      }
+    },
+    [coordinatorForm],
+  )
+
+  const searchEmails = useCallback(
+    async (searchValue) => {
+      if (!searchValue || !searchValue.trim()) {
+        setEmailOptions([])
+        return
+      }
+
+      const normalized = searchValue.trim().toLowerCase()
+
+      let customerList = allCustomerSuggestions
+      if (!customerList.length) {
+        customerList = await fetchCustomerSuggestions()
+      }
+
+      const matches = (customerList || [])
+        .map((c) => c.email)
+        .filter(Boolean)
+        .filter((e) => e.toLowerCase().includes(normalized))
+        .slice(0, 20)
+
+      setEmailOptions(matches.map((e) => ({ value: e, label: e })))
+    },
+    [allCustomerSuggestions, fetchCustomerSuggestions],
+  )
+
+  const searchPhones = useCallback(
+    async (searchValue) => {
+      if (!searchValue || !searchValue.trim()) {
+        setPhoneOptions([])
+        return
+      }
+
+      const normalized = searchValue.trim().toLowerCase()
+
+      let customerList = allCustomerSuggestions
+      if (!customerList.length) {
+        customerList = await fetchCustomerSuggestions()
+      }
+
+      const matches = (customerList || [])
+        .map((c) => c.phone_no)
+        .filter(Boolean)
+        .filter((p) => p.toLowerCase().includes(normalized))
+        .slice(0, 20)
+
+      setPhoneOptions(matches.map((p) => ({ value: p, label: p })))
+    },
+    [allCustomerSuggestions, fetchCustomerSuggestions],
+  )
+
+
   const handleCustomerSelect = useCallback((value, option) => {
     const customer = option?.customer
-    if (customer) {
-      coordinatorForm.setFieldsValue({
-        customer_name: customer.name,
-        customer_type: customer.customer_type || '',
-        address: customer.address || '',
-        email: customer.email || '',
-        phone_no: customer.phone_no || '',
-        alternate_contact_details: customer.alternate_contact_details || '',
-      })
-    }
+    if (!customer) return
+
+    const addresses = Array.isArray(customer.addresses) ? customer.addresses : []
+    setAddressOptions(addresses.map((a) => ({ value: a, label: a })))
+
+    const phones = []
+    if (customer.phone_no) phones.push(customer.phone_no)
+    if (customer.alternate_contact_details) phones.push(customer.alternate_contact_details)
+    setPhoneOptions(Array.from(new Set(phones)).map((p) => ({ value: p, label: p })))
+
+    const emails = []
+    if (customer.email) emails.push(customer.email)
+    setEmailOptions(Array.from(new Set(emails)).map((e) => ({ value: e, label: e })))
+
+    coordinatorForm.setFieldsValue({
+      customer_name: customer.name,
+      customer_type: customer.customer_type || '',
+    })
   }, [coordinatorForm])
 
   // Submit new proposal via coordinator endpoint
@@ -537,6 +817,12 @@ function Proposals() {
         throw new Error(errorBody.detail || 'Failed to create proposal')
       }
 
+      const result = await response.json()
+      const newProjectId = result?.proposal_id
+      if (newProjectId) {
+        openUploadModalForNewProposal(newProjectId)
+      }
+
       message.success('Proposal created successfully by coordinator')
       closeCoordinatorModal()
       await fetchProposals() // Refresh table
@@ -551,7 +837,7 @@ function Proposals() {
   // Statistics
   const statistics = useMemo(() => {
     const totalProposals = tableData.length
-    const totalProjects = tableData.length
+    const totalProjects = tableData.filter((item) => item.project_number?.trim()).length
     const technicallyCompleted = tableData.filter(
       (item) =>
         item.technical_completed_year &&
@@ -570,7 +856,7 @@ function Proposals() {
 
   // Filtering logic
   useEffect(() => {
-    let filtered = [...tableData]
+    let filtered = tableData
 
     if (searchText) {
       const s = searchText.trim()
@@ -609,33 +895,31 @@ function Proposals() {
     }
 
     if (statusFilter) {
-      if (statusFilter === 'totalProjects') {
-        // Shown everything in the table for Scientists/GH, as they treat everything assigned as a "Project"
-        filtered = tableData
-      } else if (statusFilter === 'technicallyCompleted') {
+      if (statusFilter === 'totalProjects')
+        filtered = filtered.filter((item) => item.project_number?.trim())
+      if (statusFilter === 'technicallyCompleted')
         filtered = filtered.filter(
           (item) =>
             item.technical_completed_year &&
             item.technical_completed_year.trim() !== '',
         )
-      } else if (statusFilter === 'financiallyCompleted') {
+      if (statusFilter === 'financiallyCompleted')
         filtered = filtered.filter(
           (item) => item.technical_completed_year?.trim() && item.financial_completed_year?.trim()
         )
-      } else if (statusFilter === 'pendingProjects') {
+      if (statusFilter === 'pendingProjects')
         filtered = filtered.filter(
           (item) =>
             item.status === 'Ongoing',
         )
-      } else if (statusFilter === 'proposals') {
+      if (statusFilter === 'proposals')
         filtered = filtered.filter((item) => !item.project_number?.trim())
-      }
     }
 
     setFilteredData(filtered)
   }, [searchText, centerFilter, orderDateRange, enquiryDateRange, statusFilter, projectCodePrefix, tableData])
 
-  const uniqueCenters = useMemo(() => [...new Set(tableData.map((i) => i.center).filter(Boolean))].sort(), [tableData])
+  const uniqueCentres = useMemo(() => [...new Set(tableData.map((i) => i.center).filter(Boolean))].sort(), [tableData])
   const uniqueProjectPrefixes = useMemo(() => {
     const prefixes = tableData
       .map((i) => i.project_number)
@@ -680,6 +964,98 @@ function Proposals() {
   }
 
   const columns = useMemo(() => {
+    const isFullViewUser =
+      ['ppbd'].includes(currentUserCentre?.toLowerCase()) ||
+      ['ppm'].includes(currentUserGroup?.toLowerCase())
+
+    const overdueDaysColumn = {
+      key: 'overdue_days',
+      dataIndex: 'overdue_days',
+      title: 'Overdue Days',
+      width: 140,
+      render: (_, record) => {
+        const overdueDays = calculateOverdueDays(
+          record.delivery_date,
+          record.extended_delivery_date,
+        )
+
+        if (overdueDays === null) return '-'
+
+        if (overdueDays > 0) {
+          return (
+            <span style={{ color: '#cf1322', fontWeight: 500 }}>
+              {overdueDays} days overdue
+            </span>
+          )
+        } else if (overdueDays < 0) {
+          return (
+            <span style={{ color: '#389e0d', fontWeight: 500 }}>
+              {Math.abs(overdueDays)} days remaining
+            </span>
+          )
+        } else {
+          return (
+            <span style={{ color: '#fa8c16', fontWeight: 500 }}>
+              Due Today
+            </span>
+          )
+        }
+      },
+    }
+
+    // If the user is not in the allowed center/group, show a slim table with a "More" button
+    if (!isFullViewUser) {
+      return [
+        {
+          key: 'id',
+          dataIndex: 'id',
+          title: 'SL NO',
+          width: 80,
+          fixed: 'left',
+          render: (text, record, index) => index + 1,
+        },
+        {
+          key: 'project_number',
+          dataIndex: 'project_number',
+          title: 'Project Number',
+          width: 140,
+        },
+        {
+          key: 'customer_name',
+          dataIndex: 'customer_name',
+          title: 'Customer Name',
+          width: 180,
+        },
+        overdueDaysColumn,
+        {
+          key: 'dispatch_date',
+          dataIndex: 'dispatch_date',
+          title: 'Dispatch Date',
+          width: 130,
+          render: (value) => formatDate(value),
+        },
+        {
+          key: 'project_co_ordinator',
+          dataIndex: 'project_co_ordinator',
+          title: 'Project Co-ordinator',
+          width: 180,
+        },
+        {
+          key: 'actions',
+          title: 'Actions',
+          fixed: 'right',
+          width: 100,
+          render: (_, record) => (
+            <Space size="small">
+              <Button size="small" type="link" onClick={() => openDetailModal(record)}>
+                More
+              </Button>
+            </Space>
+          ),
+        },
+      ]
+    }
+
     const dateFields = new Set([
       'order_date',
       'delivery_date',
@@ -742,42 +1118,6 @@ function Proposals() {
       (col) => col.key === 'extended_delivery_date',
     )
 
-    const overdueDaysColumn = {
-      key: 'overdue_days',
-      dataIndex: 'overdue_days',
-      title: 'Overdue Days',
-      width: 140,
-      render: (_, record) => {
-        const overdueDays = calculateOverdueDays(
-          record.delivery_date,
-          record.extended_delivery_date,
-        )
-
-        if (overdueDays === null) return '-'
-
-        if (overdueDays > 0) {
-          return (
-            <span style={{ color: '#cf1322', fontWeight: 500 }}>
-              {overdueDays} days overdue
-            </span>
-          )
-        } else if (overdueDays < 0) {
-          return (
-            <span style={{ color: '#389e0d', fontWeight: 500 }}>
-              {Math.abs(overdueDays)} days remaining
-            </span>
-          )
-        } else {
-          return (
-            <span style={{ color: '#fa8c16', fontWeight: 500 }}>
-              Due Today
-            </span>
-          )
-        }
-      },
-    }
-
-    // Insert overdue_days column after extended_delivery_date
     if (extendedDeliveryIndex !== -1) {
       base.splice(extendedDeliveryIndex + 1, 0, overdueDaysColumn)
     }
@@ -788,31 +1128,17 @@ function Proposals() {
         key: 'actions',
         title: 'Actions',
         fixed: 'right',
-        width: 100,
+        width: 80,
         render: (_, record) => (
           <Space size="small">
-            <Button
-              size="small"
-              type="link"
-              icon={<EyeOutlined />}
-              title="View"
-              onClick={(e) => {
-                e.stopPropagation()
-                openDetailModal(record)
-              }}
-            />
-            <Button
-              size="small"
-              type="link"
-              icon={<EditOutlined />}
-              title="Edit"
-              onClick={() => openEditModal(record)}
-            />
+            <Button size="small" type="link" icon={<EditOutlined />} onClick={() => openEditModal(record)}>
+              Edit
+            </Button>
           </Space>
         ),
       },
     ]
-  }, [openEditModal, openDetailModal])
+  }, [openEditModal, currentUserCentre, currentUserGroup])
 
   return (
     <>
@@ -827,20 +1153,20 @@ function Proposals() {
                     <Statistic title={<span className="text-white/90">Total Proposals</span>} value={proposalCount} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white cursor-pointer" onClick={() => setStatusFilter('totalProjects')}>
-                    <Statistic title={<span className="text-white/90">Total Projects</span>} value={stats.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Total Projects</span>} value={statistics.totalProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white cursor-pointer" onClick={() => setStatusFilter('technicallyCompleted')}>
-                    <Statistic title={<span className="text-white/90">Technically Completed</span>} value={stats.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Technically Completed</span>} value={statistics.technicallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white cursor-pointer" onClick={() => setStatusFilter('financiallyCompleted')}>
-                    <Statistic title={<span className="text-white/90">Financially Completed</span>} value={stats.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Financially Completed</span>} value={statistics.financiallyCompleted} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                   <Card className="bg-gradient-to-br from-red-500 to-red-600 text-white cursor-pointer" onClick={() => setStatusFilter('pendingProjects')}>
-                    <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={stats.ongoingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
+                    <Statistic title={<span className="text-white/90">Ongoing Projects</span>} value={statistics.pendingProjects} valueStyle={{ color: '#fff', fontSize: '28px', fontWeight: 'bold' }} />
                   </Card>
                 </div>
 
-
+                
               </div>
 
               {/* Search & Filters */}
@@ -856,8 +1182,8 @@ function Proposals() {
                     </Select>
                   </Col>
                   <Col xs={24} md={4}>
-                    <Select placeholder="Center" value={centerFilter} onChange={setCenterFilter} allowClear size="large" style={{ width: '100%' }}>
-                      {uniqueCenters.map((c) => (<Select.Option key={c} value={c}>{c}</Select.Option>))}
+                    <Select placeholder="Centre" value={centerFilter} onChange={setCentreFilter} allowClear size="large" style={{ width: '100%' }}>
+                      {uniqueCentres.map((c) => (<Select.Option key={c} value={c}>{c}</Select.Option>))}
                     </Select>
                   </Col>
                   <Col xs={24} md={5}>
@@ -870,7 +1196,7 @@ function Proposals() {
                 <div className="mt-4 flex justify-between">
                   <Button onClick={() => {
                     setSearchText('')
-                    setCenterFilter(null)
+                    setCentreFilter(null)
                     setOrderDateRange(null)
                     setEnquiryDateRange(null)
                     setStatusFilter(null)
@@ -891,15 +1217,27 @@ function Proposals() {
                     <Title level={4} className="!mb-1">Proposal / Projects</Title>
                     <p className="text-slate-500 text-sm">Showing {filteredData.length} records</p>
                   </div>
-                  <Button
-                    type="primary"
-                    size="large"
-                    icon={<PlusOutlined />}
-                    onClick={openCoordinatorAddModal}
-                    className="bg-gradient-to-r from-green-500 to-green-600 border-none shadow-md hover:shadow-lg"
-                  >
-                    Add Proposal
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button
+                      type="primary"
+                      size="large"
+                      icon={<PlusOutlined />}
+                      onClick={openCoordinatorAddModal}
+                      className="bg-gradient-to-r from-green-500 to-green-600 border-none shadow-md hover:shadow-lg"
+                    >
+                      Add Proposal
+                    </Button>
+                    {createdProjectId && (
+                      <Button
+                        type="default"
+                        size="large"
+                        icon={<UploadOutlined />}
+                        onClick={() => openUploadModalForNewProposal(createdProjectId)}
+                      >
+                        Upload Docs
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 <Table
                   rowKey="key"
@@ -907,9 +1245,12 @@ function Proposals() {
                   dataSource={filteredData}
                   loading={tableLoading}
                   pagination={{ pageSize: 10 }}
-                  scroll={{ x: 1800, y: 600 }}
                   sticky
                   bordered
+                  onRow={(record) => ({
+                    onClick: () => openDetailModal(record),
+                    style: { cursor: 'pointer' },
+                  })}
                 />
               </div>
             </div>
@@ -925,6 +1266,31 @@ function Proposals() {
         width={900}
         footer={[
           <Button key="close" onClick={closeDetailModal}>Close</Button>,
+          <Button
+            key="view-docs"
+            type="default"
+            disabled={!selectedRecord?.id}
+            onClick={() => {
+              if (selectedRecord?.id) {
+                openDocsModal(selectedRecord.id)
+              }
+            }}
+          >
+            View Uploads
+          </Button>,
+          <Button
+            key="upload"
+            type="default"
+            disabled={!selectedRecord?.id}
+            onClick={() => {
+              if (selectedRecord?.id) {
+                closeDetailModal()
+                openUploadModalForNewProposal(selectedRecord.id)
+              }
+            }}
+          >
+            Upload
+          </Button>,
           <Button key="edit" type="primary" onClick={() => {
             closeDetailModal()
             openEditModal(selectedRecord)
@@ -966,19 +1332,36 @@ function Proposals() {
         open={coordinatorModalOpen}
         onCancel={closeCoordinatorModal}
         width={1100}
-        okText="Submit"
-        confirmLoading={coordinatorSubmitLoading}
-        onOk={() => coordinatorForm.submit()}
+        footer={[
+          <Button key="cancel" onClick={closeCoordinatorModal}>Cancel</Button>,
+          <Button
+            key="upload"
+            type="default"
+            disabled={!createdProjectId}
+            onClick={() => {
+              if (createdProjectId) {
+                openUploadModalForNewProposal(createdProjectId)
+              } else {
+                message.warning('Create a proposal first to upload documents')
+              }
+            }}
+          >
+            Upload
+          </Button>,
+          <Button
+            key="submit"
+            type="primary"
+            loading={coordinatorSubmitLoading}
+            onClick={() => coordinatorForm.submit()}
+          >
+            Submit
+          </Button>,
+        ]}
         maskClosable={false}
       >
         <Form form={coordinatorForm} layout="vertical" onFinish={handleCoordinatorSubmit}>
           <Row gutter={[16, 16]}>
-            {COORDINATOR_ADD_FIELDS.filter((fieldName) => {
-              if (userRole === 'scientist') {
-                return !['quotation_given_by_department', 'center', 'group'].includes(fieldName)
-              }
-              return true
-            }).map((fieldName) => {
+            {COORDINATOR_ADD_FIELDS.map((fieldName) => {
               const field = PROPOSAL_FIELDS.find((f) => f.name === fieldName)
               if (!field) return null
 
@@ -988,9 +1371,12 @@ function Proposals() {
               const isRequestType = fieldName === 'request_type'
               const isReadOnlyName = fieldName === 'quotation_given_by_name'
               const isReadOnlyDept = fieldName === 'quotation_given_by_department'
-              const isReadOnlyCenter = fieldName === 'center'
+              const isReadOnlyCentre = fieldName === 'center'
               const isReadOnlyGroup = fieldName === 'group'
               const isCustomerName = fieldName === 'customer_name'
+              const isAddressField = fieldName === 'address'
+              const isEmailField = fieldName === 'email'
+              const isPhoneField = fieldName === 'phone_no'
 
               return (
                 <Col span={12} key={fieldName}>
@@ -1025,7 +1411,40 @@ function Proposals() {
                       >
                         <Input />
                       </AutoComplete>
-                    ) : isReadOnlyName || isReadOnlyDept || isReadOnlyCenter || isReadOnlyGroup ? (
+                    ) : isAddressField ? (
+                      <AutoComplete
+                        options={addressOptions}
+                        onSearch={searchAddresses}
+                        placeholder="Type or select address..."
+                        style={{ width: '100%' }}
+                        allowClear
+                        onSelect={(value) => coordinatorForm.setFieldsValue({ address: value })}
+                      >
+                        <Input />
+                      </AutoComplete>
+                    ) : isEmailField ? (
+                      <AutoComplete
+                        options={emailOptions}
+                        onSearch={searchEmails}
+                        placeholder="Type or select email..."
+                        style={{ width: '100%' }}
+                        allowClear
+                        onSelect={(value) => coordinatorForm.setFieldsValue({ email: value })}
+                      >
+                        <Input />
+                      </AutoComplete>
+                    ) : isPhoneField ? (
+                      <AutoComplete
+                        options={phoneOptions}
+                        onSearch={searchPhones}
+                        placeholder="Type or select phone..."
+                        style={{ width: '100%' }}
+                        allowClear
+                        onSelect={(value) => coordinatorForm.setFieldsValue({ phone_no: value })}
+                      >
+                        <Input />
+                      </AutoComplete>
+                    ) : isReadOnlyName || isReadOnlyDept || isReadOnlyCentre || isReadOnlyGroup ? (
                       <Input disabled style={{ background: '#f5f5f5', color: '#000' }} />
                     ) : (
                       <Input placeholder={`Enter ${field.label}`} />
@@ -1036,6 +1455,116 @@ function Proposals() {
             })}
           </Row>
         </Form>
+      </Modal>
+
+      {/* Upload Document Modal */}
+      <Modal
+        title={`Upload Document - ${selectedStageForUpload?.stage_name || 'Enquiry'}`}
+        open={uploadModalVisible}
+        onCancel={handleCloseUploadModal}
+        footer={[
+          <Button key="cancel" onClick={handleCloseUploadModal}>Cancel</Button>,
+          <Button key="upload" type="primary" loading={uploading} onClick={handleUpload}>Upload</Button>,
+        ]}
+        width={600}
+      >
+        <Space direction="vertical" size="large" className="w-full">
+          <Dragger {...{
+            multiple: false,
+            maxCount: 1,
+            beforeUpload: (file) => {
+              setFileToUpload(file)
+              return false
+            },
+            onRemove: () => setFileToUpload(null),
+            fileList: fileToUpload
+              ? [{
+                  uid: fileToUpload.uid || fileToUpload.name,
+                  name: fileToUpload.name,
+                  status: 'done',
+                  originFileObj: fileToUpload,
+                }]
+              : [],
+          }}>
+            <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+            <p className="ant-upload-text">Click or drag file to this area</p>
+          </Dragger>
+
+          <Input placeholder="Document Name *" value={documentName} disabled />
+          <TextArea placeholder="Description (optional)" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+          <Input placeholder="Your Name *" value={uploadedBy} disabled />
+        </Space>
+      </Modal>
+
+      {/* Uploaded Documents (Version List) Modal */}
+      <Modal
+        title="Uploaded Enquiry Documents"
+        open={docsModalVisible}
+        onCancel={() => setDocsModalVisible(false)}
+        footer={[
+          <Button key="close" onClick={() => setDocsModalVisible(false)}>Close</Button>,
+        ]}
+        width={700}
+        maskClosable={false}
+      >
+        <Table
+          rowKey="id"
+          dataSource={projectDocs}
+          loading={docsLoading}
+          pagination={false}
+          columns={[
+            {
+              title: 'Version',
+              dataIndex: 'version',
+              key: 'version',
+              width: 80,
+              render: (v) => (v ? `v${v}` : '-'),
+            },
+            {
+              title: 'Name',
+              dataIndex: 'display_name',
+              key: 'name',
+            },
+            {
+              title: 'Uploaded By',
+              dataIndex: 'uploaded_by',
+              key: 'uploaded_by',
+              width: 150,
+            },
+            {
+              title: 'Uploaded At',
+              dataIndex: 'created_at',
+              key: 'created_at',
+              width: 180,
+              render: (value) => (value ? dayjs(value).format(DISPLAY_DATE_FORMAT + ' HH:mm') : '-'),
+            },
+            {
+              title: 'View',
+              key: 'view',
+              width: 80,
+              render: (_, record) => (
+                <Button
+                  type="link"
+                  icon={<EyeOutlined />}
+                  onClick={() => viewDocument(record)}
+                />
+              ),
+            },
+          ]}
+        />
+        {(!docsLoading && !projectDocs.length) && (
+          <div className="text-center text-gray-500 mt-4">No documents uploaded yet.</div>
+        )}
+      </Modal>
+
+      <Modal
+        title="Document Viewer"
+        open={!!viewDocumentUrl}
+        onCancel={() => setViewDocumentUrl(null)}
+        footer={null}
+        width={1100}
+      >
+        <iframe src={viewDocumentUrl || ''} className="w-full h-[80vh]" title="Document" />
       </Modal>
 
       {/* Edit Proposal Modal */}
@@ -1051,19 +1580,22 @@ function Proposals() {
       >
         <Form form={form} layout="vertical" onFinish={handleSubmit}>
           <Row gutter={[16, 16]}>
-            {TABLE_FIELDS.filter(field => {
+            {TABLE_FIELDS.map((field) => {
               const allowedEditFields = [
                 'extended_delivery_date',
                 'co_ordinator_remarks',
                 'technical_completed_year',
                 'updated_by',
               ]
-              return !editingRecord || allowedEditFields.includes(field.name)
-            }).map((field) => {
+
+              // When editing, only show the allowed edit fields
+              if (editingRecord && !allowedEditFields.includes(field.name)) {
+                return null
+              }
 
               const isTextArea = field.input === 'textarea'
               const isUpdatedByField = field.name === 'updated_by'
-
+              
               // Date fields that should use DatePicker
               const dateFields = [
                 'enquiry_date',
@@ -1076,12 +1608,12 @@ function Proposals() {
                 'dispatch_date',
               ]
               const isDateField = dateFields.includes(field.name)
-
+              
               return (
                 <Col span={12} key={field.name}>
-                  <Form.Item
-                    name={field.name}
-                    label={field.label}
+                  <Form.Item 
+                    name={field.name} 
+                    label={field.label} 
                     rules={field.required ? [{ required: true, message: `${field.label} is required` }] : []}
                     getValueProps={(value) => ({
                       value: value && isDateField
@@ -1101,9 +1633,9 @@ function Proposals() {
                     {isTextArea ? (
                       <TextArea rows={3} placeholder={`Enter ${field.label}`} disabled={isUpdatedByField && editingRecord} />
                     ) : isDateField ? (
-                      <DatePicker
-                        style={{ width: '100%' }}
-                        format="DD.MM.YYYY"
+                      <DatePicker 
+                        style={{ width: '100%' }} 
+                        format="DD.MM.YYYY" 
                         placeholder={`Select ${field.label}`}
                       />
                     ) : (
