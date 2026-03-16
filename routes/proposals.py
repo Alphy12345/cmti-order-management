@@ -301,19 +301,27 @@ def get_proposals_with_payments(db: Session = Depends(get_db)):
 # GET PROPOSALS BY NAME (with role-based extension for gh/ch)
 # ------------------------------
 @router.get("/by-name/{name}", response_model=List[ProposalResponse])
-def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
+def get_proposals_by_name(
+    name: str,
+    user_role: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     from models.user_model import User
     
     name_lower = name.lower()
     
-    # First, look up the user's role
-    user = db.query(User).filter(func.lower(User.name) == name_lower).first()
-    user_role = user.role.lower() if user and user.role else None
+    # If user_role query param is provided, use it; otherwise look up from database
+    if user_role:
+        effective_role = user_role.lower()
+    else:
+        # Look up the user's role from database
+        user = db.query(User).filter(func.lower(User.name) == name_lower).first()
+        effective_role = user.role.lower() if user and user.role else None
 
     # GH should only see proposals from SAME CENTER + SAME GROUP:
     #   1. Proposal's center matches GH's center
     #   2. AND (proposal's group matches GH's group OR assigned to group member)
-    if user_role == 'gh':
+    if effective_role == 'gh':
         user_group_lower = (user.group or '').strip().lower() if user else ''
         user_center_lower = (user.center or '').strip().lower() if user else ''
         
@@ -394,11 +402,14 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
 
         return result
     
-    if user_role == 'scientist':
+    if effective_role == 'scientist':
         proposals_query = (
             db.query(Proposal)
             .filter(
-                func.lower(Proposal.project_co_ordinator).contains(name_lower),
+                or_(
+                    func.lower(Proposal.quotation_given_by_name) == name_lower,
+                    func.lower(Proposal.project_co_ordinator).contains(name_lower),
+                ),
                 Proposal.is_acknowledged == True,
             )
             .distinct(Proposal.id)
@@ -409,9 +420,9 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
         names_to_search = [name_lower]
         
         # If user has 'gh' or 'ch' role, fetch all users with same role
-        if user_role in ['gh', 'ch']:
+        if effective_role in ['gh', 'ch']:
             role_users = db.query(User).filter(
-                func.lower(User.role) == user_role,
+                func.lower(User.role) == effective_role,
                 func.lower(User.name) != name_lower  # Exclude the original user
             ).all()
             for role_user in role_users:
@@ -440,7 +451,7 @@ def get_proposals_by_name(name: str, db: Session = Depends(get_db)):
             proposals.append(p)
 
     if not proposals:
-        role_info = f" (including all {user_role.upper()} role users)" if user_role in ['gh', 'ch'] else ""
+        role_info = f" (including all {effective_role.upper()} role users)" if effective_role in ['gh', 'ch'] else ""
         raise HTTPException(
             status_code=404,
             detail=(
@@ -545,6 +556,37 @@ def get_global_proposal_stats(db: Session = Depends(get_db)):
         "financiallyCompleted": financially_completed,
         "ongoingProjects": ongoing_projects
     }
+
+
+# ------------------------------
+# ROLE-BASED: TOTAL PROPOSALS COUNTS
+# ------------------------------
+@router.get("/count/by-group/{group}")
+def count_proposals_by_group(group: str, db: Session = Depends(get_db)):
+    group_lower = group.strip().lower()
+    total = (
+        db.query(func.count(Proposal.id))
+        .filter(
+            Proposal.is_acknowledged == True,
+            func.lower(Proposal.group) == group_lower,
+        )
+        .scalar()
+    )
+    return {"count": total or 0}
+
+
+@router.get("/count/by-centre/{centre}")
+def count_proposals_by_centre(centre: str, db: Session = Depends(get_db)):
+    centre_lower = centre.strip().lower()
+    total = (
+        db.query(func.count(Proposal.id))
+        .filter(
+            Proposal.is_acknowledged == True,
+            func.lower(Proposal.center) == centre_lower,
+        )
+        .scalar()
+    )
+    return {"count": total or 0}
 
 
 @router.get("/stats/by-center/{center}")
@@ -710,7 +752,10 @@ def get_proposal_stats_by_scientist(name: str, db: Session = Depends(get_db)):
     
     # Base filter: project_co_ordinator contains scientist name AND acknowledged
     base_filter = and_(
-        func.lower(Proposal.project_co_ordinator).contains(name_lower),
+        or_(
+            func.lower(Proposal.quotation_given_by_name) == name_lower,
+            func.lower(Proposal.project_co_ordinator).contains(name_lower),
+        ),
         Proposal.is_acknowledged == True
     )
     

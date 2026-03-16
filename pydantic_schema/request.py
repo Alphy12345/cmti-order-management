@@ -160,12 +160,23 @@ class ProposalCoordinatorCreate(BaseModel):
     quote_date: Optional[str] = None
     quote_amount: Optional[str] = None
 
-    revised_negotiated: Optional[str] = None
-    revised_negotiated_quote_date: Optional[str] = None
-    revised_negotiated_quote_amount: Optional[str] = None
+    revised_negotiated: Optional[str] = Field(
+        default=None, alias="revised/negotiated"
+    )
+    revised_negotiated_quote_date: Optional[str] = Field(
+        default=None, alias="revised/negotiated_quote_date"
+    )
+    revised_negotiated_quote_amount: Optional[str] = Field(
+        default=None, alias="revised/negotiated_quote_amount"
+    )
 
     quotation_given_by_name: Optional[str] = None
     quotation_given_by_department: Optional[str] = None
+    center: Optional[str] = None
+    group: Optional[str] = None
+
+    class Config:
+        populate_by_name = True
 
 
 class AcknowledgeUpdate(BaseModel):
