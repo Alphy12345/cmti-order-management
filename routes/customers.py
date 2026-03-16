@@ -1,10 +1,17 @@
+from collections import defaultdict
+from typing import List
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
 from db import get_db
-from models.model import Customer
-from pydantic_schema.customer_schema import CustomerCreate, CustomerResponse
+from models.model import Customer, Proposal
+from pydantic_schema.customer_schema import (
+    CustomerCreate,
+    CustomerFromProposalResponse,
+    CustomerResponse,
+)
 
 router = APIRouter(prefix="/customers", tags=["Customers"])
 
@@ -48,7 +55,92 @@ def search_customers(
 # GET ALL CUSTOMERS
 @router.get("/", response_model=list[CustomerResponse])
 def get_customers(db: Session = Depends(get_db)):
-    return db.query(Customer).order_by(Customer.name.asc()).all()
+    """Return explicit customers, or fall back to unique customer entries extracted from proposals."""
+
+    customers = db.query(Customer).order_by(Customer.name.asc()).all()
+    if customers:
+        return customers
+
+    # Fallback: build customer list from proposals (when customer table is empty)
+    proposals = db.query(Proposal).filter(Proposal.customer_name != None).all()
+
+    customers_by_name: dict[str, dict] = {}
+    for proposal in proposals:
+        name = (proposal.customer_name or "").strip()
+        if not name:
+            continue
+
+        if name not in customers_by_name:
+            customers_by_name[name] = {
+                "id": proposal.id or 0,
+                "name": name,
+                "customer_type": proposal.customer_type,
+                "address": proposal.address,
+                "email": proposal.email,
+                "phone_no": proposal.phone_no,
+                "alternate_contact_details": proposal.alternate_contact_details,
+                "created_at": proposal.created_at,
+                "updated_at": proposal.updated_at,
+            }
+
+    # Return values in alphabetical order by name
+    return sorted(customers_by_name.values(), key=lambda c: c["name"].lower())
+
+
+# GET CUSTOMERS FROM PROPOSALS
+@router.get("/from-proposals", response_model=List[CustomerFromProposalResponse])
+def get_customers_from_proposals(db: Session = Depends(get_db)):
+    """Return unique customers derived from proposal records, including all known addresses."""
+
+    proposals = db.query(Proposal).filter(Proposal.customer_name != None).all()
+    by_name: dict[str, dict] = {}
+
+    for proposal in proposals:
+        name = (proposal.customer_name or "").strip()
+        if not name:
+            continue
+
+        entry = by_name.setdefault(name, {
+            "name": name,
+            "customer_type": proposal.customer_type,
+            "email": proposal.email,
+            "phone_no": proposal.phone_no,
+            "alternate_contact_details": proposal.alternate_contact_details,
+            "addresses": set(),
+        })
+
+        if proposal.address:
+            entry["addresses"].add(proposal.address)
+
+    return [
+        {
+            **{k: v for k, v in entry.items() if k != "addresses"},
+            "addresses": sorted(entry["addresses"]),
+        }
+        for entry in by_name.values()
+    ]
+
+
+# GET CUSTOMER ADDRESSES (from proposals)
+@router.get("/addresses", response_model=List[str])
+def get_customer_addresses(
+    name: str = Query(..., description="Customer name to fetch addresses for"),
+    db: Session = Depends(get_db),
+):
+    """Return all addresses seen for the given customer name (based on proposals)."""
+
+    name = name.strip()
+    if not name:
+        return []
+
+    proposals = (
+        db.query(Proposal)
+        .filter(func.lower(Proposal.customer_name) == func.lower(name))
+        .all()
+    )
+
+    addresses = {p.address for p in proposals if p.address and p.address.strip()}
+    return sorted(addresses)
 
 
 # GET SINGLE CUSTOMER
